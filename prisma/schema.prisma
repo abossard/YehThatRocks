@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+  engineType = "library"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Video {
+  id            Int            @id @default(autoincrement())
+  videoId       String         @unique @db.VarChar(32)
+  title         String         @db.VarChar(255)
+  channelTitle  String?        @map("channelTitle") @db.VarChar(255)
+  thumbnail     String?        @db.VarChar(500)
+  viewCount     Int?           @map("viewCount")
+  favourited    Int            @default(0)
+  description   String?        @db.LongText
+  createdAt     DateTime?      @map("created_at")
+  updatedAt     DateTime?      @map("updated_at")
+  favourites    Favourite[]
+  playlistItems PlaylistItem[]
+  artistVideos  ArtistVideo[]
+  siteVideos    SiteVideo[]
+
+  @@map("videos")
+}
+
+model Artist {
+  id      Int     @id @default(autoincrement())
+  name    String  @map("artist") @db.VarChar(255)
+  country String? @db.VarChar(255)
+  genre1  String? @db.VarChar(255)
+  genre2  String? @db.VarChar(255)
+  genre3  String? @db.VarChar(255)
+  genre4  String? @db.VarChar(255)
+  genre5  String? @db.VarChar(255)
+  genre6  String? @db.VarChar(255)
+
+  @@map("artists")
+}
+
+model Genre {
+  id   Int     @id @default(autoincrement())
+  name String  @map("genre") @db.VarChar(255)
+  slug String? @db.VarChar(255)
+
+  @@map("genres")
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  email        String?        @unique @db.VarChar(255)
+  emailVerifiedAt DateTime?   @map("email_verified_at")
+  screenName   String?        @map("screen_name") @db.VarChar(255)
+  password     String?        @db.VarChar(255)
+  passwordHash String?        @map("password_hash") @db.VarChar(255)
+  avatarUrl    String?        @map("avatar_url") @db.VarChar(500)
+  favourites   Favourite[]
+  playlists    PlaylistName[]
+  messages     Message[]
+  aiTracks     AiTrack[]
+  aiTrackVotes AiTrackVote[]
+  authSessions AuthSession[]
+  authAudits   AuthAuditLog[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@map("users")
+}
+
+model EmailVerificationToken {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  tokenHash  String   @map("token_hash") @unique @db.VarChar(128)
+  expiresAt  DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  tokenHash  String   @map("token_hash") @unique @db.VarChar(128)
+  expiresAt  DateTime @map("expires_at")
+  consumedAt DateTime? @map("consumed_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+model AuthSession {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @map("user_id")
+  familyId       String    @map("family_id") @db.VarChar(64)
+  tokenHash      String    @map("token_hash") @unique @db.VarChar(128)
+  remember       Boolean   @default(false)
+  expiresAt      DateTime  @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  replacedByHash String?   @map("replaced_by_hash") @db.VarChar(128)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  user           User      @relation(fields: [userId], references: [id])
+
+  @@index([familyId])
+  @@index([userId])
+  @@map("auth_sessions")
+}
+
+model AuthAuditLog {
+  id         Int       @id @default(autoincrement())
+  userId     Int?      @map("user_id")
+  email      String?   @db.VarChar(255)
+  action     String    @db.VarChar(50)
+  success    Boolean   @default(false)
+  ipAddress  String?   @map("ip_address") @db.VarChar(64)
+  userAgent  String?   @map("user_agent") @db.VarChar(500)
+  detail     String?   @db.VarChar(500)
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User?     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action, createdAt])
+  @@map("auth_audit_logs")
+}
+
+model Favourite {
+  id      Int   @id @default(autoincrement())
+  userId  Int   @map("user_id")
+  videoId Int   @map("video_id")
+  user    User  @relation(fields: [userId], references: [id])
+  video   Video @relation(fields: [videoId], references: [id])
+
+  @@map("favourites")
+}
+
+model PlaylistName {
+  id        Int            @id @default(autoincrement())
+  userId    Int?           @map("user_id")
+  name      String         @db.VarChar(255)
+  isPrivate Boolean?       @map("is_private")
+  user      User?          @relation(fields: [userId], references: [id])
+  items     PlaylistItem[]
+
+  @@map("playlistnames")
+}
+
+model PlaylistItem {
+  id         Int          @id @default(autoincrement())
+  playlistId Int          @map("playlist_id")
+  videoId    Int          @map("video_id")
+  sortOrder  Int?         @map("sort_order")
+  playlist   PlaylistName @relation(fields: [playlistId], references: [id])
+  video      Video        @relation(fields: [videoId], references: [id])
+
+  @@map("playlistitems")
+}
+
+model Message {
+  id        Int       @id @default(autoincrement())
+  userId    Int?      @map("user_id")
+  videoId   String?   @map("video_id") @db.VarChar(32)
+  room      String?   @db.VarChar(50)
+  content   String    @db.Text
+  createdAt DateTime? @map("created_at")
+  user      User?     @relation(fields: [userId], references: [id])
+
+  @@map("messages")
+}
+
+model OnlinePresence {
+  id       Int       @id @default(autoincrement())
+  userId   Int?      @map("user_id")
+  lastSeen DateTime? @map("last_seen")
+
+  @@map("online")
+}
+
+model RelatedCache {
+  id        Int       @id @default(autoincrement())
+  videoId   String?   @db.VarChar(20)
+  related   String?   @db.VarChar(20)
+  createdAt DateTime?
+  updatedAt DateTime?
+
+  @@map("related")
+}
+
+model SearchCache {
+  id       Int       @id @default(autoincrement())
+  query    String    @db.VarChar(255)
+  html     String?   @db.LongText
+  cachedAt DateTime? @map("cached_at")
+
+  @@map("searches")
+}
+
+model ArtistVideo {
+  id      Int    @id @default(autoincrement())
+  artist  String @db.VarChar(255)
+  videoId Int    @map("video_id")
+  video   Video  @relation(fields: [videoId], references: [id])
+
+  @@map("videosbyartist")
+}
+
+model SiteVideo {
+  id        Int       @id @default(autoincrement())
+  videoId   Int?      @map("video_id")
+  title     String?   @db.VarChar(255)
+  status    String?   @db.VarChar(50)
+  createdAt DateTime? @map("created_at")
+  video     Video?    @relation(fields: [videoId], references: [id])
+
+  @@map("site_videos")
+}
+
+model AiTrack {
+  id          Int           @id @default(autoincrement())
+  title       String        @db.VarChar(255)
+  description String?       @db.Text
+  prompt      String?       @db.Text
+  genreId     Int?          @map("genre_id")
+  tool        String?       @db.VarChar(100)
+  audioUrl    String?       @map("audio_url") @db.VarChar(500)
+  artworkUrl  String?       @map("artwork_url") @db.VarChar(500)
+  playCount   Int           @default(0) @map("play_count")
+  uploadedBy  Int?          @map("uploaded_by")
+  status      String        @default("pending") @db.VarChar(20)
+  createdAt   DateTime?     @map("created_at")
+  updatedAt   DateTime?     @map("updated_at")
+  user        User?         @relation(fields: [uploadedBy], references: [id])
+  votes       AiTrackVote[]
+
+  @@map("ai_tracks")
+}
+
+model AiTrackVote {
+  id        Int       @id @default(autoincrement())
+  trackId   Int       @map("track_id")
+  userId    Int       @map("user_id")
+  vote      Int
+  createdAt DateTime? @map("created_at")
+  track     AiTrack   @relation(fields: [trackId], references: [id])
+  user      User      @relation(fields: [userId], references: [id])
+
+  @@unique([trackId, userId])
+  @@map("ai_track_votes")
+}

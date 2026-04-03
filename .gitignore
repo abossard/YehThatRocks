@@ -1,0 +1,16 @@
+node_modules
+.next
+.turbo
+dist
+coverage
+playwright-report
+test-results
+logs
+rocks.sql
+
+# Environment secrets
+.env
+.env.local
+.env.*.local
+apps/web/.env.local
+pnpm-lock.yaml
