@@ -46,7 +46,6 @@ export async function POST(request: NextRequest) {
       id: true,
       email: true,
       passwordHash: true,
-      password: true,
     },
   });
 
@@ -54,7 +53,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const storedHash = user.passwordHash ?? user.password;
+  const storedHash = user.passwordHash;
 
   if (!storedHash) {
     return NextResponse.json({ error: "Password login is not enabled for this account" }, { status: 400 });
@@ -78,10 +77,7 @@ export async function POST(request: NextRequest) {
 
   await prisma.user.update({
     where: { id: user.id },
-    data: {
-      passwordHash,
-      password: null,
-    },
+    data: { passwordHash },
   });
 
   await revokeUserRefreshSessions(user.id);

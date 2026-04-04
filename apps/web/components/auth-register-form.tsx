@@ -56,7 +56,7 @@ export function AuthRegisterForm() {
       </label>
       <label>
         <span>Screen name</span>
-        <input name="screenName" type="text" placeholder="MetalFan204" required minLength={2} maxLength={40} />
+        <input name="screenName" type="text" placeholder="MetalFan204" required minLength={2} maxLength={40} autoComplete="nickname" />
       </label>
       <label>
         <span>Password</span>

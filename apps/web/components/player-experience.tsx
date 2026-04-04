@@ -8,6 +8,7 @@ import type { VideoRecord } from "@/lib/catalog";
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
   queue: VideoRecord[];
+  isLoggedIn: boolean;
 };
 
 type YouTubePlayerStateChangeEvent = {
@@ -74,9 +75,35 @@ const HISTORY_KEY = "yeh-player-history";
 const RESUME_KEY = "yeh-player-resume";
 const HISTORY_LIMIT = 20;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
+const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
+const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
+const CANONICAL_SITE_ORIGIN = "https://yehthatrocks.com";
+
+if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+  const consoleWithPatchState = console as typeof console & {
+    __ytrWarnPatched?: boolean;
+  };
+
+  if (!consoleWithPatchState.__ytrWarnPatched) {
+    const originalWarn = console.warn.bind(console);
+    consoleWithPatchState.__ytrWarnPatched = true;
+
+    console.warn = (...args: unknown[]) => {
+      const first = args[0];
+      const message = typeof first === "string" ? first : "";
+
+      // YouTube widget emits this repeatedly in some browsers; hide this known non-actionable warning.
+      if (message.includes("Unrecognized feature: 'web-share'.")) {
+        return;
+      }
+
+      originalWarn(...args);
+    };
+  }
+}
 
 function logPlayerDebug(event: string, detail?: Record<string, unknown>) {
-  if (process.env.NODE_ENV !== "development") {
+  if (!PLAYER_DEBUG_ENABLED) {
     return;
   }
 
@@ -84,8 +111,30 @@ function logPlayerDebug(event: string, detail?: Record<string, unknown>) {
   console.log(`[player] ${event}${payload}`);
 }
 
+function logFlow(event: string, detail?: Record<string, unknown>) {
+  if (!FLOW_DEBUG_ENABLED) {
+    return;
+  }
+
+  const payload = detail ? ` ${JSON.stringify(detail)}` : "";
+  console.log(`[flow/player] ${event}${payload}`);
+}
+
 function toSafeNumber(value: unknown, fallback = 0) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function formatPlaybackTime(value: number) {
+  const safeValue = Math.max(0, Math.floor(toSafeNumber(value, 0)));
+  const hours = Math.floor(safeValue / 3600);
+  const minutes = Math.floor((safeValue % 3600) / 60);
+  const seconds = safeValue % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
@@ -120,11 +169,16 @@ function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   return false;
 }
 
-export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps) {
+function buildCanonicalShareUrl(videoId: string) {
+  return `${CANONICAL_SITE_ORIGIN}/?v=${encodeURIComponent(videoId)}`;
+}
+
+export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExperienceProps) {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
   const playerElementRef = useRef<HTMLDivElement | null>(null);
+  const playerFrameRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YouTubePlayer | null>(null);
   const overlayTimeoutRef = useRef<number | null>(null);
   const isBootstrappingHistoryRef = useRef(true);
@@ -144,13 +198,42 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
     const [showControls, setShowControls] = useState(false);
     const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
     const [showShareMenu, setShowShareMenu] = useState(false);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    const [isScrubbing, setIsScrubbing] = useState(false);
     const progressIntervalRef = useRef<number | null>(null);
     const nowPlayingShownForVideoRef = useRef<string | null>(null);
     const reportedUnavailableVideoIdRef = useRef<string | null>(null);
     const playAttemptedAtRef = useRef<number | null>(null);
+    const nextVideoIdRef = useRef<string>(currentVideo.id);
+  const autoplayEnabledRef = useRef(autoplayEnabled);
+  autoplayEnabledRef.current = autoplayEnabled;
+
+  function handleFullscreenToggle() {
+    if (!document.fullscreenElement) {
+      playerFrameRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
+  }
+
+  useEffect(() => {
+    function onFullscreenChange() {
+      setIsFullscreen(!!document.fullscreenElement);
+    }
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
 
   const currentIndex = queue.findIndex((video) => video.id === currentVideo.id);
   const nextVideo = currentIndex >= 0 ? queue[(currentIndex + 1) % queue.length] : queue[0];
+  nextVideoIdRef.current = nextVideo.id;
+  const hasPreviousTrack = historyStack.length >= 2;
+  const safeDuration = Math.max(0, toSafeNumber(duration, 0));
+  const safeCurrentTime = Math.max(0, Math.min(toSafeNumber(currentTime, 0), safeDuration || Number.MAX_SAFE_INTEGER));
+  const progressPercent = safeDuration > 0 ? Math.min(100, Math.max(0, (safeCurrentTime / safeDuration) * 100)) : 0;
+  const elapsedLabel = formatPlaybackTime(safeCurrentTime);
+  const durationLabel = formatPlaybackTime(safeDuration);
+  const shareUrl = buildCanonicalShareUrl(currentVideo.id);
 
   function persistResumeSnapshot(wasPlaying: boolean, explicitTime?: number) {
     if (typeof window === "undefined") {
@@ -235,7 +318,19 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
     playAttemptedAtRef.current = null;
     setHasPlaybackStarted(false);
     setShowControls(false);
+    logFlow("current-video:changed", {
+      currentVideoId: currentVideo.id,
+      queueSize: queue.length,
+    });
   }, [currentVideo.id]);
+
+  useEffect(() => {
+    // When an overlay page closes, the pointer may already be over the player.
+    // Show controls immediately so users don't need to move the mouse to retrigger hover.
+    if (pathname === "/") {
+      setShowControls(true);
+    }
+  }, [pathname]);
 
   useEffect(() => {
     if (!isPlayerReady || isPlaying || !playAttemptedAtRef.current) {
@@ -269,15 +364,16 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
         state,
       });
 
-      if (shouldSkip && nextVideo.id !== currentVideo.id) {
-        navigateToVideo(nextVideo.id);
+      const nextId = nextVideoIdRef.current;
+      if (shouldSkip && nextId !== currentVideo.id) {
+        navigateToVideo(nextId);
       }
     }, 4500);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [currentVideo.id, isPlayerReady, isPlaying, nextVideo.id, playerHostMode]);
+  }, [currentVideo.id, isPlayerReady, isPlaying, playerHostMode]);
 
   async function reportUnavailableFromPlayer(reason: string) {
     if (reportedUnavailableVideoIdRef.current === currentVideo.id) {
@@ -355,6 +451,11 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
       if (playerRef.current) {
         const didSwitch = switchPlayerVideo(playerRef.current, currentVideo.id);
 
+        logFlow("player:switch-existing", {
+          currentVideoId: currentVideo.id,
+          didSwitch,
+        });
+
         if (didSwitch) {
           setIsPlayerReady(true);
 
@@ -397,6 +498,9 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
         },
         events: {
           onReady: (event) => {
+            logFlow("player:onReady", {
+              currentVideoId: currentVideo.id,
+            });
             setIsPlayerReady(true);
             setVolume(toSafeNumber(event.target.getVolume(), 100));
             setDuration(toSafeNumber(event.target.getDuration(), 0));
@@ -445,6 +549,10 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
             }
           },
           onStateChange: (event) => {
+            logFlow("player:onStateChange", {
+              currentVideoId: currentVideo.id,
+              state: event.data,
+            });
             const playing = event.data === window.YT?.PlayerState.PLAYING;
             setIsPlaying(playing);
 
@@ -477,8 +585,8 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
               }
             }
 
-            if (event.data === window.YT?.PlayerState.ENDED && autoplayEnabled) {
-              navigateToVideo(nextVideo.id);
+            if (event.data === window.YT?.PlayerState.ENDED && autoplayEnabledRef.current) {
+              navigateToVideo(nextVideoIdRef.current);
             }
           },
           onError: async (event) => {
@@ -524,12 +632,13 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
               shouldSkip,
             });
 
-            if (shouldSkip && nextVideo.id !== currentVideo.id) {
+            const nextId = nextVideoIdRef.current;
+            if (shouldSkip && nextId !== currentVideo.id) {
               logPlayerDebug("onError:navigate-next", {
                 currentVideoId: currentVideo.id,
-                nextVideoId: nextVideo.id,
+                nextVideoId: nextId,
               });
-              navigateToVideo(nextVideo.id);
+              navigateToVideo(nextId);
             }
           },
         },
@@ -558,7 +667,7 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
     return () => {
       cancelled = true;
     };
-  }, [autoplayEnabled, currentVideo.id, nextVideo.id, playerHostMode]);
+  }, [currentVideo.id, playerHostMode]);
 
   useEffect(() => {
     return () => {
@@ -617,10 +726,6 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
   }
 
   async function handleCopyShareLink() {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("v", currentVideo.id);
-    const shareUrl = `${window.location.origin}${pathname}?${params.toString()}`;
-
     if (navigator.clipboard?.writeText) {
       await navigator.clipboard.writeText(shareUrl);
     } else {
@@ -640,10 +745,6 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
       }
 
       async function handleShareToSocials() {
-        const params = new URLSearchParams(searchParams.toString());
-        params.set("v", currentVideo.id);
-        const shareUrl = `${window.location.origin}${pathname}?${params.toString()}`;
-
         if (navigator.share) {
           try {
             await navigator.share({ title: currentVideo.title, url: shareUrl });
@@ -703,18 +804,34 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
       return (
         <>
           <div
+            ref={playerFrameRef}
             className={isPlayerReady ? "playerFrame playerFrameLoaded" : "playerFrame"}
             onMouseEnter={() => setShowControls(true)}
             onMouseLeave={() => {
-              setShowControls(false);
-              setShowShareMenu(false);
+              if (isPlaying) {
+                setShowControls(false);
+                setShowShareMenu(false);
+              }
             }}
           >
             <div ref={playerElementRef} className="playerMount" />
 
+            {!isPlayerReady ? (
+              <div className="playerBootLoader" role="status" aria-live="polite" aria-label="Loading video player">
+                <div className="playerBootBars" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <p>Loading player...</p>
+              </div>
+            ) : null}
+
             {isPlayerReady && (
-              <div className={!hasPlaybackStarted || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
-                <div className="overlayTopRight">
+              <div className={!hasPlaybackStarted || !isPlaying || showControls ? "playerOverlay playerOverlayVisible" : "playerOverlay"}>
+                <div className="overlayTop">
+                  <p className="overlayTitle">{currentVideo.title}</p>
                   <div className="shareMenuWrap">
                     <button
                       type="button"
@@ -763,16 +880,33 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
                 </div>
 
                 <div className="overlayBottom">
-                  <input
-                    type="range"
-                    className="overlayProgress"
-                    min={0}
-                    max={Math.max(1, toSafeNumber(duration, 0))}
-                    step={0.5}
-                    value={Math.max(0, toSafeNumber(currentTime, 0))}
-                    onChange={handleSeek}
-                    aria-label="Seek"
-                  />
+                  <div className="overlayProgressWrap">
+                    {isScrubbing ? (
+                      <div
+                        className="overlayProgressIndicator"
+                        style={{ left: `${progressPercent}%` }}
+                        aria-hidden="true"
+                      >
+                        {elapsedLabel}
+                      </div>
+                    ) : null}
+                    <input
+                      type="range"
+                      className="overlayProgress"
+                      min={0}
+                      max={Math.max(1, safeDuration)}
+                      step={0.5}
+                      value={safeCurrentTime}
+                      onChange={handleSeek}
+                      onMouseDown={() => setIsScrubbing(true)}
+                      onMouseUp={() => setIsScrubbing(false)}
+                      onTouchStart={() => setIsScrubbing(true)}
+                      onTouchEnd={() => setIsScrubbing(false)}
+                      onFocus={() => setIsScrubbing(true)}
+                      onBlur={() => setIsScrubbing(false)}
+                      aria-label={`Seek position ${elapsedLabel} of ${durationLabel}`}
+                    />
+                  </div>
                   <div className="overlayVolume">
                     <button
                       type="button"
@@ -801,6 +935,29 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
                       onChange={handleVolumeChange}
                       aria-label="Volume"
                     />
+                    <div className="overlayTimeMeta" aria-label={`Playback time ${elapsedLabel} of ${durationLabel}`}>
+                      <span>{elapsedLabel}</span>
+                      <span>/</span>
+                      <span>{durationLabel}</span>
+                    </div>
+                    <button
+                      type="button"
+                      className="overlayIconBtn overlayFullscreenBtn"
+                      onClick={handleFullscreenToggle}
+                      aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+                    >
+                      {isFullscreen ? (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="8 3 3 3 3 8" /><polyline points="21 8 21 3 16 3" />
+                          <polyline points="3 16 3 21 8 21" /><polyline points="16 21 21 21 21 16" />
+                        </svg>
+                      ) : (
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 3 21 3 21 9" /><polyline points="9 21 3 21 3 15" />
+                          <line x1="21" y1="3" x2="14" y2="10" /><line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -815,15 +972,37 @@ export function PlayerExperience({ currentVideo, queue }: PlayerExperienceProps)
           </div>
 
           <div className="primaryActions">
-            <button type="button">Add to Favourites</button>
-            <button type="button" onClick={handlePrevious} disabled={historyStack.length < 2}>
-              Previous Track
+            <div className="shareUrlField">
+              <label htmlFor="share-url" className="shareUrlLabel">Share URL</label>
+              <input
+                id="share-url"
+                type="text"
+                className="shareUrlInput"
+                size={Math.min(Math.max(shareUrl.length, 24), 48)}
+                style={{ width: `calc(${Math.min(Math.max(shareUrl.length, 24), 48)}ch - 12px)` }}
+                readOnly
+                value={shareUrl}
+                onFocus={(event) => event.currentTarget.select()}
+                onClick={(event) => event.currentTarget.select()}
+                aria-label="Share URL"
+              />
+            </div>
+            {isLoggedIn && <button type="button">Add to Favourites</button>}
+            <button type="button" onClick={handlePrevious} disabled={!hasPreviousTrack}>
+              <span className="primaryNavGlyph" aria-hidden="true">⇤</span> Previous
             </button>
             <button type="button" onClick={handleNext}>
-              Next Track
+              <span className="primaryNavGlyph" aria-hidden="true">⇥</span> Next
             </button>
-            <button type="button" onClick={handleToggleAutoplay}>
-              Autoplay {autoplayEnabled ? "On" : "Off"}
+            <button
+              type="button"
+              className={autoplayEnabled ? "primaryActionToggleButton primaryActionToggleButtonActive" : "primaryActionToggleButton"}
+              onClick={handleToggleAutoplay}
+              aria-label={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
+              title={autoplayEnabled ? "Disable autoplay" : "Enable autoplay"}
+            >
+              <span className="primaryActionGlyph" aria-hidden="true">⇮</span>
+              <span>Autoplay: {autoplayEnabled ? "On" : "Off"}</span>
             </button>
           </div>
         </>

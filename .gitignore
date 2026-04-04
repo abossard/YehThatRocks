@@ -14,3 +14,5 @@ rocks.sql
 .env.*.local
 apps/web/.env.local
 pnpm-lock.yaml
+*.tsbuildinfo
+apps/web/.tmp-*.ts

@@ -73,7 +73,6 @@ export async function POST(request: NextRequest) {
         email: true,
         screenName: true,
         passwordHash: true,
-        password: true,
       },
     });
 
@@ -88,7 +87,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
     }
 
-    const storedHash = user.passwordHash ?? user.password;
+    const storedHash = user.passwordHash;
 
     if (!storedHash) {
       await recordAuthAudit({

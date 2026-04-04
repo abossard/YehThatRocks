@@ -35,6 +35,7 @@ const dbChunkMultiplier = Number(parseArg("dbChunkMultiplier", "3"));
 const checkpointFile = parseArg("checkpointFile", "").trim();
 const resume = process.argv.includes("--resume");
 const writeRetries = Number(parseArg("writeRetries", "6"));
+const pruneUnavailable = process.argv.includes("--prune-unavailable");
 
 const AGE_RESTRICTED_PATTERNS = [
   /Sign in to confirm your age/i,
@@ -55,11 +56,22 @@ function sleep(ms) {
 }
 
 function isWriteConflictError(error) {
+  const code =
+    error && typeof error === "object" && "code" in error
+      ? String(error.code ?? "")
+      : "";
+  const message = error instanceof Error ? error.message : String(error ?? "");
+
+  const hasLockSignal =
+    message.includes("Lock wait timeout exceeded") ||
+    message.includes("deadlock") ||
+    message.includes("1205") ||
+    message.includes("1213");
+
   return Boolean(
     error &&
       typeof error === "object" &&
-      "code" in error &&
-      (error.code === "P2034" || error.code === "P2028"),
+      (code === "P2034" || code === "P2028" || code === "P2010" || hasLockSignal),
   );
 }
 
@@ -74,7 +86,7 @@ async function withWriteRetry(work, contextLabel) {
         throw error;
       }
 
-      const backoffMs = 40 * 2 ** attempt + Math.floor(Math.random() * 60);
+      const backoffMs = Math.min(5000, 250 * 2 ** attempt + Math.floor(Math.random() * 250));
       console.warn(
         JSON.stringify(
           {
@@ -332,17 +344,43 @@ async function markStatus(video, status, reason, duplicateMap, existingSiteVideo
   const ids = duplicates.map((item) => item.id);
   const canonicalTitle = duplicates[0]?.title ?? video.title ?? "Unknown";
 
-  const updated = await withWriteRetry(
-    () =>
-      prisma.siteVideo.updateMany({
-        where: { videoId: { in: ids } },
-        data: {
-          status,
-          title: `${canonicalTitle} [${reason}]`,
-        },
-      }),
-    "siteVideo.updateMany",
-  );
+  let updated;
+  try {
+    updated = await withWriteRetry(
+      () =>
+        prisma.siteVideo.updateMany({
+          where: { videoId: { in: ids } },
+          data: {
+            status,
+            title: `${canonicalTitle} [${reason}]`,
+          },
+        }),
+      "siteVideo.updateMany",
+    );
+  } catch (error) {
+    if (!isWriteConflictError(error)) {
+      throw error;
+    }
+
+    // Fallback for heavy lock contention: update row-by-row with retries.
+    let count = 0;
+    for (const id of ids) {
+      const single = await withWriteRetry(
+        () =>
+          prisma.siteVideo.updateMany({
+            where: { videoId: id },
+            data: {
+              status,
+              title: `${canonicalTitle} [${reason}]`,
+            },
+          }),
+        "siteVideo.updateMany.single",
+      );
+      count += Number(single?.count ?? 0);
+    }
+
+    updated = { count };
+  }
 
   if (updated.count < ids.length) {
     const missingIds = ids.filter((id) => !existingSiteVideoIds.has(id));
@@ -367,6 +405,119 @@ async function markStatus(video, status, reason, duplicateMap, existingSiteVideo
       }
     }
   }
+}
+
+async function pruneUnavailableVideo(videoId, duplicateMap) {
+  const duplicates = duplicateMap.get(videoId) ?? [];
+  if (duplicates.length === 0) {
+    return { pruned: false, deletedVideoRows: 0 };
+  }
+
+  const ids = duplicates.map((item) => item.id);
+
+  const loadTableColumns = async (tableName) => {
+    try {
+      return await prisma.$queryRawUnsafe(`SHOW COLUMNS FROM ${tableName}`);
+    } catch {
+      return [];
+    }
+  };
+
+  const [siteVideoColumns, playlistColumns, favouriteColumns, artistVideoColumns, messageColumns, relatedColumns] = await Promise.all([
+    loadTableColumns("site_videos"),
+    loadTableColumns("playlistitems"),
+    loadTableColumns("favourites"),
+    loadTableColumns("videosbyartist"),
+    loadTableColumns("messages"),
+    loadTableColumns("related"),
+  ]);
+
+  const pickColumn = (columns, names) => columns.find((column) => names.includes(column.Field));
+  const escapeId = (value) => `\`${String(value).replace(/`/g, "``")}\``;
+  const isNumericType = (type) => /int|bigint|smallint|tinyint/i.test(String(type ?? ""));
+
+  await withWriteRetry(
+    async () => {
+      const siteVideoRef = pickColumn(siteVideoColumns, ["video_id", "videoId"]);
+      if (siteVideoRef) {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM site_videos WHERE ${escapeId(siteVideoRef.Field)} IN (${ids.map(() => "?").join(",")})`,
+          ...ids,
+        );
+      }
+
+      const playlistRef = pickColumn(playlistColumns, ["video_id", "videoId"]);
+      if (playlistRef) {
+        if (isNumericType(playlistRef.Type)) {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM playlistitems WHERE ${escapeId(playlistRef.Field)} IN (${ids.map(() => "?").join(",")})`,
+            ...ids,
+          );
+        } else {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM playlistitems WHERE ${escapeId(playlistRef.Field)} = ?`,
+            videoId,
+          );
+        }
+      }
+
+      const favouriteRef = pickColumn(favouriteColumns, ["video_id", "videoId"]);
+      if (favouriteRef) {
+        if (isNumericType(favouriteRef.Type)) {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM favourites WHERE ${escapeId(favouriteRef.Field)} IN (${ids.map(() => "?").join(",")})`,
+            ...ids,
+          );
+        } else {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM favourites WHERE ${escapeId(favouriteRef.Field)} = ?`,
+            videoId,
+          );
+        }
+      }
+
+      const artistVideoRef = pickColumn(artistVideoColumns, ["video_id", "videoId", "id"]);
+      if (artistVideoRef) {
+        if (isNumericType(artistVideoRef.Type)) {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM videosbyartist WHERE ${escapeId(artistVideoRef.Field)} IN (${ids.map(() => "?").join(",")})`,
+            ...ids,
+          );
+        } else {
+          await prisma.$executeRawUnsafe(
+            `DELETE FROM videosbyartist WHERE ${escapeId(artistVideoRef.Field)} = ?`,
+            videoId,
+          );
+        }
+      }
+
+      const messageRef = pickColumn(messageColumns, ["video_id", "videoId"]);
+      if (messageRef) {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM messages WHERE ${escapeId(messageRef.Field)} = ?`,
+          videoId,
+        );
+      }
+
+      const relatedVideoRef = pickColumn(relatedColumns, ["video_id", "videoId"]);
+      const relatedRelatedRef = pickColumn(relatedColumns, ["related_video", "related"]);
+      if (relatedVideoRef && relatedRelatedRef) {
+        await prisma.$executeRawUnsafe(
+          `DELETE FROM related WHERE ${escapeId(relatedVideoRef.Field)} = ? OR ${escapeId(relatedRelatedRef.Field)} = ?`,
+          videoId,
+          videoId,
+        );
+      }
+
+      await prisma.$executeRawUnsafe(
+        `DELETE FROM videos WHERE id IN (${ids.map(() => "?").join(",")})`,
+        ...ids,
+      );
+    },
+    "pruneUnavailableVideo.transaction",
+  );
+
+  return { pruned: true, deletedVideoRows: ids.length };
 }
 
 async function runPool(items, worker, parallelism) {
@@ -395,6 +546,8 @@ async function main() {
   let available = checkpoint?.available ?? 0;
   let unavailable = checkpoint?.unavailable ?? 0;
   let checkFailed = checkpoint?.checkFailed ?? 0;
+  let pruned = checkpoint?.pruned ?? 0;
+  let prunedVideoRows = checkpoint?.prunedVideoRows ?? 0;
   const seenVideoIds = new Set();
 
   if (checkpoint) {
@@ -410,6 +563,8 @@ async function main() {
           available,
           unavailable,
           checkFailed,
+          pruned,
+          prunedVideoRows,
         },
         null,
         2,
@@ -477,7 +632,15 @@ async function main() {
           await markStatus(video, "available", result.reason, duplicateMap, existingSiteVideoIds);
         } else if (result.status === "unavailable") {
           unavailable += 1;
-          await markStatus(video, "unavailable", result.reason, duplicateMap, existingSiteVideoIds);
+          if (pruneUnavailable) {
+            const pruneResult = await pruneUnavailableVideo(video.videoId, duplicateMap);
+            if (pruneResult.pruned) {
+              pruned += 1;
+              prunedVideoRows += pruneResult.deletedVideoRows;
+            }
+          } else {
+            await markStatus(video, "unavailable", result.reason, duplicateMap, existingSiteVideoIds);
+          }
         } else {
           checkFailed += 1;
           await markStatus(video, "check-failed", result.reason, duplicateMap, existingSiteVideoIds);
@@ -494,6 +657,8 @@ async function main() {
       available,
       unavailable,
       checkFailed,
+      pruned,
+      prunedVideoRows,
       updatedAt: new Date().toISOString(),
     });
 
@@ -507,6 +672,8 @@ async function main() {
           available,
           unavailable,
           checkFailed,
+          pruned,
+          prunedVideoRows,
           totalTarget,
           progressPct: totalTarget > 0 ? Number(((checked / totalTarget) * 100).toFixed(2)) : null,
           nextCursor,
@@ -532,6 +699,8 @@ async function main() {
         unavailable,
         checkFailed,
         offset,
+        pruned,
+        prunedVideoRows,
         finalCursor: currentCursor,
         limit,
         includeAll,

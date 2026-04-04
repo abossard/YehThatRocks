@@ -12,6 +12,7 @@ export type ArtistRecord = {
   slug: string;
   country: string;
   genre: string;
+  thumbnailVideoId?: string;
 };
 
 export type AiTrackRecord = {

@@ -18,7 +18,7 @@ type PasswordResetDelegate = VerificationDelegate;
 type UserDelegate = {
   update: (args: {
     where: { id: number };
-    data: { emailVerifiedAt?: Date; passwordHash?: string; password?: null };
+    data: { emailVerifiedAt?: Date; passwordHash?: string };
   }) => Promise<unknown>;
 };
 

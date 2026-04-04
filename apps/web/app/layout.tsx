@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Metal_Mania, Rajdhani } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 
 const metalMania = Metal_Mania({
@@ -27,7 +28,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <link rel="dns-prefetch" href="https://www.youtube.com" />
+        <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
+        <link rel="dns-prefetch" href="https://i.ytimg.com" />
+        <link rel="preconnect" href="https://www.youtube.com" />
+        <link rel="preconnect" href="https://www.youtube-nocookie.com" />
+        <link rel="preconnect" href="https://i.ytimg.com" />
+      </head>
       <body className={`${metalMania.variable} ${rajdhani.variable}`}>
+        <Script
+          id="youtube-iframe-api"
+          src="https://www.youtube.com/iframe_api"
+          strategy="beforeInteractive"
+        />
         {children}
       </body>
     </html>

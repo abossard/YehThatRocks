@@ -5,5 +5,5 @@ export async function hashPassword(password: string) {
 }
 
 export async function verifyPassword(password: string, passwordHash: string) {
-  return bcrypt.compare(password, passwordHash);
+  return bcrypt.compare(password, passwordHash.trim());
 }

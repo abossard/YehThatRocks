@@ -12,7 +12,7 @@ type AppShellProps = {
   activePath: string;
   currentVideo: VideoRecord;
   relatedVideos: VideoRecord[];
-  kicker: string;
+  kicker: ReactNode;
   title: string;
   description: string;
   children: ReactNode;
@@ -32,16 +32,24 @@ export async function AppShell({
     getCurrentAuthenticatedUser(),
   ]);
   const isOverlayRoute = activePath !== "/";
+  const disableOverlayDropAnimation = activePath === "/categories" || activePath.startsWith("/categories/");
   const uniqueRelatedVideos = relatedVideos.filter(
     (video, index, allVideos) =>
       video.id !== currentVideo.id && allVideos.findIndex((candidate) => candidate.id === video.id) === index,
   );
-  const visibleNavItems = currentUser
+  const visibleNavItems = (currentUser
     ? navItems
-    : navItems.filter((item) => !["/favourites", "/playlists", "/account"].includes(item.href));
+    : navItems.filter((item) => !["/favourites", "/playlists", "/account"].includes(item.href))).filter(
+      (item) => item.href !== "/",
+    );
 
   function getRelatedThumbnail(videoId: string) {
     return `https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/mqdefault.jpg`;
+  }
+
+  function getNavHref(href: string) {
+    const params = new URLSearchParams({ v: currentVideo.id, resume: "1" });
+    return `${href}?${params.toString()}`;
   }
 
   return (
@@ -71,10 +79,25 @@ export async function AppShell({
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={getNavHref(item.href)}
                   className={isActive ? "navLink navLinkActive" : "navLink"}
                 >
-                  {item.label}
+                  {item.href === "/categories" ? (
+                    <>
+                      <span className="navCategoryGlyph" aria-hidden="true">☣</span>
+                      <span>{item.label}</span>
+                    </>
+                  ) : item.href === "/artists" ? (
+                    <>
+                      <span className="navArtistsGlyph" aria-hidden="true">🎸︎</span>
+                      <span>{item.label}</span>
+                    </>
+                  ) : item.href === "/top100" ? (
+                    <>
+                      <span className="navTop100Glyph" aria-hidden="true">🏆︎</span>
+                      <span>{item.label}</span>
+                    </>
+                  ) : item.label}
                 </Link>
               );
             })}
@@ -82,6 +105,7 @@ export async function AppShell({
 
           <div className="searchWrap">
             <form action="/search">
+              <input type="hidden" name="v" value={currentVideo.id} />
               <label className="searchLabel srOnly" htmlFor="search">
                 Search artists, tracks, and chaos
               </label>
@@ -140,7 +164,7 @@ export async function AppShell({
 
               <AuthLoginForm />
 
-              <div className="primaryActions compactActions guestRailActions">
+              <div className="guestRailActions">
                 <Link href="/register" className="navLink">Create account</Link>
                 <Link href="/forgot-password" className="navLink">Forgot password?</Link>
               </div>
@@ -151,11 +175,14 @@ export async function AppShell({
         <section className="playerStage">
           <div className="playerChrome">
             <Suspense fallback={<div className="playerLoadingFallback" />}>
-              <PlayerExperience currentVideo={currentVideo} queue={[currentVideo, ...uniqueRelatedVideos]} />
+              <PlayerExperience currentVideo={currentVideo} queue={[currentVideo, ...uniqueRelatedVideos]} isLoggedIn={!!currentUser} />
             </Suspense>
 
             {isOverlayRoute ? (
-              <section className="favouritesBlind" aria-label="Favourites blind overlay">
+              <section
+                className={disableOverlayDropAnimation ? "favouritesBlind favouritesBlindNoDrop" : "favouritesBlind"}
+                aria-label="Favourites blind overlay"
+              >
                 <div className="favouritesBlindInner">
                   <div className="favouritesBlindBar">
                     <strong>{kicker}</strong>

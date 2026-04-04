@@ -41,10 +41,7 @@ export async function POST(request: NextRequest) {
 
   await prisma.user.update({
     where: { id: userId },
-    data: {
-      passwordHash,
-      password: null,
-    },
+    data: { passwordHash },
   });
 
   await revokeUserRefreshSessions(userId);

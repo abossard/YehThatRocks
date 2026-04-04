@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider   = "prisma-client-js"
   engineType = "library"
 }
 
@@ -9,21 +9,29 @@ datasource db {
 }
 
 model Video {
-  id            Int            @id @default(autoincrement())
-  videoId       String         @unique @db.VarChar(32)
-  title         String         @db.VarChar(255)
-  channelTitle  String?        @map("channelTitle") @db.VarChar(255)
-  thumbnail     String?        @db.VarChar(500)
-  viewCount     Int?           @map("viewCount")
-  favourited    Int            @default(0)
-  description   String?        @db.LongText
-  createdAt     DateTime?      @map("created_at")
-  updatedAt     DateTime?      @map("updated_at")
-  favourites    Favourite[]
-  playlistItems PlaylistItem[]
-  artistVideos  ArtistVideo[]
-  siteVideos    SiteVideo[]
+  id              Int            @id @default(autoincrement())
+  videoId         String         @unique @db.VarChar(32)
+  title           String         @db.VarChar(255)
+  parsedArtist    String?        @db.VarChar(255)
+  parsedTrack     String?        @db.VarChar(255)
+  parsedVideoType String?        @db.VarChar(50)
+  parseMethod     String?        @db.VarChar(50)
+  parseReason     String?        @db.VarChar(500)
+  parseConfidence Float?
+  parsedAt        DateTime?      @db.DateTime
+  channelTitle    String?        @map("channelTitle") @db.VarChar(255)
+  thumbnail       String?        @db.VarChar(500)
+  viewCount       Int?           @map("viewCount")
+  favourited      Int            @default(0)
+  description     String?        @db.LongText
+  createdAt       DateTime?      @map("created_at")
+  updatedAt       DateTime?      @map("updated_at")
+  favourites      Favourite[]
+  playlistItems   PlaylistItem[]
+  artistVideos    ArtistVideo[]
+  siteVideos      SiteVideo[]
 
+  @@fulltext([title, parsedArtist, parsedTrack])
   @@map("videos")
 }
 
@@ -41,6 +49,25 @@ model Artist {
   @@map("artists")
 }
 
+model ArtistStat {
+  id               Int       @id @default(autoincrement())
+  normalizedArtist String    @unique @map("normalized_artist") @db.VarChar(255)
+  displayName      String    @map("display_name") @db.VarChar(255)
+  slug             String    @db.VarChar(255)
+  firstLetter      String    @map("first_letter") @db.Char(1)
+  country          String?   @db.VarChar(255)
+  genre            String?   @db.VarChar(255)
+  thumbnailVideoId String?   @map("thumbnail_video_id") @db.VarChar(32)
+  videoCount       Int       @default(0) @map("video_count")
+  source           String?   @db.VarChar(50)
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@index([firstLetter, displayName])
+  @@index([videoCount])
+  @@map("artist_stats")
+}
+
 model Genre {
   id   Int     @id @default(autoincrement())
   name String  @map("genre") @db.VarChar(255)
@@ -50,47 +77,46 @@ model Genre {
 }
 
 model User {
-  id           Int            @id @default(autoincrement())
-  email        String?        @unique @db.VarChar(255)
-  emailVerifiedAt DateTime?   @map("email_verified_at")
-  screenName   String?        @map("screen_name") @db.VarChar(255)
-  password     String?        @db.VarChar(255)
-  passwordHash String?        @map("password_hash") @db.VarChar(255)
-  avatarUrl    String?        @map("avatar_url") @db.VarChar(500)
-  favourites   Favourite[]
-  playlists    PlaylistName[]
-  messages     Message[]
-  aiTracks     AiTrack[]
-  aiTrackVotes AiTrackVote[]
-  authSessions AuthSession[]
-  authAudits   AuthAuditLog[]
+  id                      Int                      @id @default(autoincrement())
+  email                   String?                  @unique @db.VarChar(255)
+  emailVerifiedAt         DateTime?                @map("email_verified_at")
+  screenName              String?                  @map("screen_name") @db.VarChar(255)
+  passwordHash            String?                  @map("password_hash") @db.VarChar(255)
+  avatarUrl               String?                  @map("avatar_url") @db.VarChar(500)
+  favourites              Favourite[]
+  playlists               PlaylistName[]
+  messages                Message[]
+  aiTracks                AiTrack[]
+  aiTrackVotes            AiTrackVote[]
+  authSessions            AuthSession[]
+  authAudits              AuthAuditLog[]
   emailVerificationTokens EmailVerificationToken[]
-  passwordResetTokens PasswordResetToken[]
+  passwordResetTokens     PasswordResetToken[]
 
   @@map("users")
 }
 
 model EmailVerificationToken {
-  id         Int      @id @default(autoincrement())
-  userId     Int      @map("user_id")
-  tokenHash  String   @map("token_hash") @unique @db.VarChar(128)
-  expiresAt  DateTime @map("expires_at")
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at")
   consumedAt DateTime? @map("consumed_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("email_verification_tokens")
 }
 
 model PasswordResetToken {
-  id         Int      @id @default(autoincrement())
-  userId     Int      @map("user_id")
-  tokenHash  String   @map("token_hash") @unique @db.VarChar(128)
-  expiresAt  DateTime @map("expires_at")
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  tokenHash  String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt  DateTime  @map("expires_at")
   consumedAt DateTime? @map("consumed_at")
-  createdAt  DateTime @default(now()) @map("created_at")
-  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime  @default(now()) @map("created_at")
+  user       User      @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@map("password_reset_tokens")
@@ -100,7 +126,7 @@ model AuthSession {
   id             Int       @id @default(autoincrement())
   userId         Int       @map("user_id")
   familyId       String    @map("family_id") @db.VarChar(64)
-  tokenHash      String    @map("token_hash") @unique @db.VarChar(128)
+  tokenHash      String    @unique @map("token_hash") @db.VarChar(128)
   remember       Boolean   @default(false)
   expiresAt      DateTime  @map("expires_at")
   revokedAt      DateTime? @map("revoked_at")
@@ -114,16 +140,16 @@ model AuthSession {
 }
 
 model AuthAuditLog {
-  id         Int       @id @default(autoincrement())
-  userId     Int?      @map("user_id")
-  email      String?   @db.VarChar(255)
-  action     String    @db.VarChar(50)
-  success    Boolean   @default(false)
-  ipAddress  String?   @map("ip_address") @db.VarChar(64)
-  userAgent  String?   @map("user_agent") @db.VarChar(500)
-  detail     String?   @db.VarChar(500)
-  createdAt  DateTime  @default(now()) @map("created_at")
-  user       User?     @relation(fields: [userId], references: [id])
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  email     String?  @db.VarChar(255)
+  action    String   @db.VarChar(50)
+  success   Boolean  @default(false)
+  ipAddress String?  @map("ip_address") @db.VarChar(64)
+  userAgent String?  @map("user_agent") @db.VarChar(500)
+  detail    String?  @db.VarChar(500)
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User?    @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([action, createdAt])

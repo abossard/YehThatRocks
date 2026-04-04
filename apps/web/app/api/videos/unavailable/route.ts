@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
+import { pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 import { verifySameOrigin } from "@/lib/csrf";
 import { parseRequestJson } from "@/lib/request-json";
 
@@ -23,9 +24,10 @@ const AGE_RESTRICTED_PATTERNS = [
   /"status"\s*:\s*"AGE_CHECK_REQUIRED"/i,
   /"status"\s*:\s*"LOGIN_REQUIRED"[\s\S]{0,240}"reason"\s*:\s*"[^"]*age/i,
 ];
+const UNAVAILABLE_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_UNAVAILABLE === "1";
 
 function debugUnavailable(event: string, detail?: Record<string, unknown>) {
-  if (process.env.NODE_ENV !== "development") {
+  if (!UNAVAILABLE_DEBUG_ENABLED) {
     return;
   }
 
@@ -187,33 +189,10 @@ export async function POST(request: NextRequest) {
     targetRows: ids.length,
   });
 
-  await prisma.siteVideo.updateMany({
-    where: { videoId: { in: ids } },
-    data: {
-      status: "unavailable",
-      title: `${videos[0]?.title ?? "Unknown"} [${reason}]`,
-    },
-  });
+  const pruneResult = await pruneVideoAndAssociationsByVideoId(
+    videoId,
+    `runtime-unavailable:${reason}|${verification.reason}`,
+  ).catch(() => ({ pruned: false, deletedVideoRows: 0, reason: "prune-failed" }));
 
-  const existing = await prisma.siteVideo.findMany({
-    where: { videoId: { in: ids } },
-    select: { videoId: true },
-  });
-  const existingIds = new Set(existing.map((row) => row.videoId));
-  const missingIds = ids.filter((id) => !existingIds.has(id));
-
-  if (missingIds.length > 0) {
-    const titleById = new Map(videos.map((video) => [video.id, video.title]));
-
-    await prisma.siteVideo.createMany({
-      data: missingIds.map((id) => ({
-        videoId: id,
-        title: `${titleById.get(id) ?? "Unknown"} [${reason}]`,
-        status: "unavailable",
-      })),
-      skipDuplicates: true,
-    });
-  }
-
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, pruned: pruneResult.pruned, deletedVideoRows: pruneResult.deletedVideoRows });
 }

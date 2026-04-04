@@ -11,11 +11,18 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "tunnel:host": "powershell -ExecutionPolicy Bypass -File ./scripts/setup-ssh-tunnel-host.ps1",
+    "enrich:video-metadata": "node scripts/enrich-video-metadata.js",
+    "enrich:video-metadata:all": "node scripts/enrich-video-metadata.js --all",
+    "enrich:video-metadata:run": "node scripts/enrich-video-metadata.js --all --until-done --limit=500 --concurrency=1 --batch-size=20 --min-confidence=0.80 --retries=6 --timeout-ms=45000",
     "prisma:format": "prisma format",
     "prisma:generate": "cross-env PRISMA_GENERATE_NO_ENGINE= prisma generate",
     "audit:embedability": "node scripts/audit-video-embedability.js",
     "audit:embedability:pool": "node scripts/audit-video-embedability.js --limit=200 --concurrency=8 --exhaustive",
-    "audit:embedability:all": "node scripts/audit-video-embedability.js --all --limit=1000 --concurrency=8 --exhaustive"
+    "audit:embedability:all": "node scripts/audit-video-embedability.js --all --limit=1000 --concurrency=8 --exhaustive",
+    "audit:catalog": "node scripts/audit-catalog-integrity.js",
+    "prune:unavailable:all": "node scripts/audit-video-embedability.js --all --limit=1000 --concurrency=8 --exhaustive --prune-unavailable",
+    "rebuild:artist-stats": "node scripts/rebuild-artist-stats.js",
+    "backfill:related": "node scripts/backfill-related-links.js"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",
