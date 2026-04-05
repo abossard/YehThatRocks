@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
 import { CloseLink } from "@/components/close-link";
 import {
   getGenreBySlug,
@@ -33,6 +34,7 @@ export default async function CategoryDetailPage({ params }: CategoryPageProps) 
 
   return (
     <>
+      <CategoriesScrollReset />
       <div className="favouritesBlindBar">
         <strong>
           <span className="categoryHeaderBreadcrumb" aria-label="Breadcrumb">

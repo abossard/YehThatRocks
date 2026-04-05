@@ -60,6 +60,21 @@ input {
 button {
   border: 0;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
+}
+
+button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+button:not(:disabled):active::after {
+  animation: navClickFlash 220ms ease-out;
 }
 
 .shell {
@@ -198,6 +213,35 @@ button {
   border-radius: 0;
   padding-top: 0;
   padding-bottom: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+.mainNav .navLink::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.mainNav .navLink:active::after {
+  animation: navClickFlash 220ms ease-out;
+}
+
+@keyframes navClickFlash {
+  0% {
+    opacity: 0;
+  }
+
+  35% {
+    opacity: 0.85;
+  }
+
+  100% {
+    opacity: 0;
+  }
 }
 
 .navCategoryGlyph,
@@ -992,14 +1036,12 @@ h1 {
   overflow: hidden;
 }
 
-.overlayTop,
 .overlayCenter,
 .overlayBottom {
   opacity: 0;
   transition: opacity 0.22s ease;
 }
 
-.playerOverlayVisible .overlayTop,
 .playerOverlayVisible .overlayCenter,
 .playerOverlayVisible .overlayBottom {
   opacity: 1;
@@ -1011,6 +1053,11 @@ h1 {
   align-items: flex-start;
   padding: 14px 14px 40px;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0px, rgba(0, 0, 0, 1) 40px, transparent 80px);
+}
+
+.playerOverlayVisible .overlayTop {
+  padding-bottom: 55px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 1) 0px, rgba(0, 0, 0, 1) 55px, transparent 95px);
 }
 
 .overlayTitle {
@@ -1154,6 +1201,14 @@ h1 {
 
 .shareMenuWrap {
   position: relative;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.playerOverlayVisible .shareMenuWrap {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .shareMenu {
@@ -1296,6 +1351,26 @@ h1 {
   padding: 12px 0;
 }
 
+.primaryActions button {
+  min-height: 50px;
+}
+
+.primaryActionIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  min-width: 48px;
+  min-height: 50px;
+  padding: 0;
+}
+
+.primaryActionIconButton .navFavouritesGlyph {
+  width: auto;
+  margin-right: 0;
+  transform: none;
+}
+
 .shareUrlField {
   display: inline-flex;
   align-items: center;
@@ -1348,10 +1423,20 @@ h1 {
 
 .primaryNavGlyph {
   display: inline-block;
-  font-size: 1.55rem;
+  font-size: 2.05rem;
   line-height: 1;
-  margin-right: 6px;
+  margin-right: 0;
   vertical-align: middle;
+}
+
+.primaryActionNavIconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  min-width: 56px;
+  min-height: 50px;
+  padding: 0;
 }
 
 .primaryActionToggleButtonActive {
@@ -1590,6 +1675,24 @@ h1 {
   color: inherit;
 }
 
+.favouritesBlindInner .linkedCard {
+  position: relative;
+  overflow: hidden;
+}
+
+.favouritesBlindInner .linkedCard::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.favouritesBlindInner .linkedCard:active::after {
+  animation: navClickFlash 220ms ease-out;
+}
+
 .relatedCard.linkedCard {
   gap: 10px;
   padding: 10px;
@@ -1666,6 +1769,23 @@ h1 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
   gap: 14px;
+}
+
+.favouritesCatalogGrid {
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  justify-content: start;
+}
+
+.favouritesEmptyState {
+  min-height: 42vh;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 8px;
+}
+
+.favouritesEmptyState p {
+  margin: 0;
 }
 
 .compactGrid {
@@ -1789,6 +1909,13 @@ h1 {
 .artistResultCard {
   gap: 5px;
   padding: 10px;
+}
+
+@supports (content-visibility: auto) {
+  .artistResultCard {
+    content-visibility: auto;
+    contain-intrinsic-size: 260px 210px;
+  }
 }
 
 .artistResultThumbWrap {

@@ -7,6 +7,22 @@ let cachedTopVideos: VideoRecord[] | null = null;
 let cachedTopVideosExpiresAt = 0;
 let topVideosRefreshPromise: Promise<VideoRecord[]> | null = null;
 
+function uniqueVideosById(videos: VideoRecord[]) {
+  const seen = new Set<string>();
+  const unique: VideoRecord[] = [];
+
+  for (const video of videos) {
+    if (seen.has(video.id)) {
+      continue;
+    }
+
+    seen.add(video.id);
+    unique.push(video);
+  }
+
+  return unique;
+}
+
 function getRefreshPromise(count: number) {
   if (!topVideosRefreshPromise) {
     topVideosRefreshPromise = getTopVideos(Math.max(count, 100))
@@ -57,13 +73,13 @@ export function warmTopVideos(count: number) {
 export async function getRandomTopVideo(options?: { excludeVideoId?: string; relatedCount?: number; waitMs?: number }) {
   const excludeVideoId = options?.excludeVideoId?.trim() || undefined;
   const relatedCount = Math.max(0, Math.min(options?.relatedCount ?? 24, 99));
-  const waitMs = Math.max(1, options?.waitMs ?? 350);
+  const waitMs = Math.max(120, Math.min(options?.waitMs ?? 900, 2_000));
 
   let pool = getCachedTopVideos(100);
   if (!pool) {
     // Warm in background; callers can keep showing loading state until canonical data arrives.
     warmTopVideos(100);
-    pool = await getTopVideosFast(100, Math.min(waitMs, 120));
+    pool = await getTopVideosFast(100, waitMs);
   }
 
   if (pool.length === 0) {
@@ -79,7 +95,7 @@ export async function getRandomTopVideo(options?: { excludeVideoId?: string; rel
       : pool;
 
   const selected = eligible[Math.floor(Math.random() * eligible.length)] ?? pool[0];
-  const relatedVideos = pool.filter((video) => video.id !== selected.id).slice(0, relatedCount);
+  const relatedVideos = uniqueVideosById(pool.filter((video) => video.id !== selected.id)).slice(0, relatedCount);
 
   return { selected, relatedVideos };
 }

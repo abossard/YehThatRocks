@@ -22,7 +22,16 @@
     "audit:catalog": "node scripts/audit-catalog-integrity.js",
     "prune:unavailable:all": "node scripts/audit-video-embedability.js --all --limit=1000 --concurrency=8 --exhaustive --prune-unavailable",
     "rebuild:artist-stats": "node scripts/rebuild-artist-stats.js",
-    "backfill:related": "node scripts/backfill-related-links.js"
+    "backfill:related": "node scripts/backfill-related-links.js",
+    "verify:categories": "node scripts/verify-categories-invariants.js",
+    "verify:categories:api": "node scripts/verify-categories-invariants.js --check-api",
+    "verify:artists-ui": "node scripts/verify-artists-ui-invariants.js",
+    "verify:top100-ui": "node scripts/verify-top100-ui-invariants.js",
+    "verify:core-experience": "node scripts/verify-core-experience-invariants.js",
+    "verify:core-experience:api": "node scripts/verify-core-experience-api-smoke.js",
+    "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:core-experience && npm run verify:categories",
+    "verify:invariants": "npm run verify:ui-regressions",
+    "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:categories:api"
   },
   "devDependencies": {
     "cross-env": "^7.0.3",

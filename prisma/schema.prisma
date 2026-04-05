@@ -76,6 +76,16 @@ model Genre {
   @@map("genres")
 }
 
+model GenreCard {
+  id              Int      @id @default(autoincrement())
+  genre           String   @unique @db.VarChar(255)
+  thumbnailVideoId String? @map("thumbnail_video_id") @db.VarChar(32)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@index([thumbnailVideoId])
+  @@map("genre_cards")
+}
+
 model User {
   id                      Int                      @id @default(autoincrement())
   email                   String?                  @unique @db.VarChar(255)

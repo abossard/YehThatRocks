@@ -1,6 +1,6 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { ArtistsLetterResults } from "@/components/artists-letter-results";
 import { CloseLink } from "@/components/close-link";
 import { getArtistsByLetter } from "@/lib/catalog-data";
@@ -41,26 +41,7 @@ export default async function ArtistsPage({ searchParams }: ArtistsPageProps) {
         <CloseLink />
       </div>
 
-      {/* Inline alphabet bar — visible on narrow screens only */}
-      <div className="artistAlphabetBar artistAlphabetBarMobileOnly" role="navigation" aria-label="Filter artists by first letter">
-        {ALPHABET.map((letter) => {
-          const params = new URLSearchParams();
-          params.set("letter", letter);
-          if (v) params.set("v", v);
-          if (resume) params.set("resume", resume);
-
-          const isActive = letter === activeLetter;
-          return (
-            <Link
-              key={letter}
-              href={`/artists?${params.toString()}`}
-              className={isActive ? "artistAlphabetButton artistAlphabetButtonActive" : "artistAlphabetButton"}
-            >
-              {letter}
-            </Link>
-          );
-        })}
-      </div>
+      <ArtistsLetterNav activeLetter={activeLetter} v={v} resume={resume} variant="mobile" />
 
       <ArtistsLetterResults
         letter={activeLetter}

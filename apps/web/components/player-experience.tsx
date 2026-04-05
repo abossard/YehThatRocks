@@ -987,12 +987,34 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                 aria-label="Share URL"
               />
             </div>
-            {isLoggedIn && <button type="button">Add to Favourites</button>}
-            <button type="button" onClick={handlePrevious} disabled={!hasPreviousTrack}>
-              <span className="primaryNavGlyph" aria-hidden="true">⇤</span> Previous
+            {isLoggedIn && (
+              <button
+                type="button"
+                className="primaryActionIconButton"
+                aria-label="Add to favourites"
+                title="Add to favourites"
+              >
+                <span className="navFavouritesGlyph" aria-hidden="true">❤️</span>
+              </button>
+            )}
+            <button
+              type="button"
+              className="primaryActionNavIconButton"
+              onClick={handlePrevious}
+              disabled={!hasPreviousTrack}
+              aria-label="Previous"
+              title="Previous"
+            >
+              <span className="primaryNavGlyph" aria-hidden="true">⇤</span>
             </button>
-            <button type="button" onClick={handleNext}>
-              <span className="primaryNavGlyph" aria-hidden="true">⇥</span> Next
+            <button
+              type="button"
+              className="primaryActionNavIconButton"
+              onClick={handleNext}
+              aria-label="Next"
+              title="Next"
+            >
+              <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
             </button>
             <button
               type="button"

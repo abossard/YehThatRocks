@@ -491,6 +491,7 @@ let topPoolCache:
   | undefined;
 
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000; // 30 seconds
 const CATEGORY_QUERY_TIMEOUT_MS = 2_500;
 const genreArtistsCache = new Map<string, { expiresAt: number; artists: ArtistRecord[] }>();
 const genreVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
@@ -501,6 +502,9 @@ const ARTIST_VIDEOS_CACHE_TTL_MS = 60_000;
 const artistVideosCache = new Map<string, { expiresAt: number; videos: VideoRecord[] }>();
 const ARTIST_LETTER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const artistLetterCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
+const ARTIST_LETTER_PAGE_CACHE_TTL_MS = 60_000; // 1 minute
+const artistLetterPageCache = new Map<string, { expiresAt: number; rows: Array<ArtistRecord & { videoCount: number }> }>();
+const artistLetterPageInFlight = new Map<string, Promise<Array<ArtistRecord & { videoCount: number }>>>();
 const ARTIST_STATS_TABLE_CACHE_TTL_MS = 60_000;
 let artistColumnMapCache:
   | {
@@ -1145,12 +1149,14 @@ function mapArtistProjectionRow(row: {
   genre: string | null;
   thumbnailVideoId?: string | null;
 }) {
+  const normalizedThumbnailVideoId = normalizeYouTubeVideoId(row.thumbnailVideoId);
+
   return {
     name: row.displayName,
     slug: row.slug,
     country: row.country ?? "Unknown",
     genre: row.genre ?? "Rock / Metal",
-    thumbnailVideoId: row.thumbnailVideoId ?? undefined,
+    thumbnailVideoId: normalizedThumbnailVideoId,
   } satisfies ArtistRecord;
 }
 
@@ -1665,6 +1671,8 @@ export async function pruneVideoAndAssociationsByVideoId(videoId: string, reason
   topPoolCache = undefined;
   artistVideosCache.clear();
   artistLetterCache.clear();
+  artistLetterPageCache.clear();
+  artistLetterPageInFlight.clear();
   genreArtistsCache.clear();
   genreVideosCache.clear();
 
@@ -2027,7 +2035,32 @@ export async function getArtists() {
   try {
     if (await hasArtistStatsProjection()) {
       const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
-      const thumbnailSelect = hasThumbnailColumn ? "s.thumbnail_video_id AS thumbnailVideoId" : "NULL AS thumbnailVideoId";
+      const thumbnailSelect = hasThumbnailColumn
+        ? `
+            COALESCE(
+              CASE
+                WHEN s.thumbnail_video_id IS NOT NULL
+                  AND EXISTS (
+                    SELECT 1
+                    FROM videos v
+                    INNER JOIN site_videos sv ON sv.video_id = v.id
+                    WHERE v.videoId = s.thumbnail_video_id
+                      AND sv.status = 'available'
+                  )
+                THEN s.thumbnail_video_id
+                ELSE NULL
+              END,
+              (
+                SELECT SUBSTRING_INDEX(GROUP_CONCAT(v2.videoId ORDER BY v2.id ASC), ',', 1)
+                FROM videos v2
+                INNER JOIN site_videos sv2 ON sv2.video_id = v2.id
+                WHERE LOWER(TRIM(v2.parsedArtist)) = s.normalized_artist
+                  AND v2.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+                  AND sv2.status = 'available'
+              )
+            ) AS thumbnailVideoId
+          `
+        : "NULL AS thumbnailVideoId";
       const rows = await prisma.$queryRawUnsafe<Array<{
         displayName: string;
         slug: string;
@@ -2064,6 +2097,7 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
   const normalizedLetter = letter.trim().toUpperCase();
   const safeLimit = Math.max(1, Math.min(limit, 300));
   const safeOffset = Math.max(0, Math.floor(offset));
+  const projectionPageCacheKey = `${normalizedLetter}:${safeOffset}:${safeLimit}`;
   const countFromSeed = (artistName: string) => {
     const normalizedName = artistName.trim().toLowerCase();
     return seedVideos.filter((video) => {
@@ -2091,62 +2125,70 @@ export async function getArtistsByLetter(letter: string, limit = 120, offset = 0
 
   try {
     if (await hasArtistStatsProjection()) {
-      const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
-      const projectedRows = await prisma.$queryRawUnsafe<Array<{
-        displayName: string;
-        slug: string;
-        country: string | null;
-        genre: string | null;
-        videoCount: number | null;
-        thumbnailVideoId: string | null;
-      }>>(
-        `
-          SELECT
-            s.display_name AS displayName,
-            s.slug,
-            s.country,
-            s.genre,
-            s.video_count AS videoCount,
-            COALESCE(rv.thumbnailVideoId, ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"}) AS thumbnailVideoId
-          FROM artist_stats s
-          LEFT JOIN (
-            SELECT
-              LOWER(TRIM(v.parsedArtist)) AS artistKey,
-              SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
-            FROM videos v
-            WHERE v.parsedArtist IS NOT NULL
-              AND TRIM(v.parsedArtist) <> ''
-              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-              AND UPPER(LEFT(TRIM(v.parsedArtist), 1)) = ?
-              AND EXISTS (
-                SELECT 1
-                FROM site_videos sv
-                WHERE sv.video_id = v.id
-                  AND sv.status = 'available'
-              )
-              AND NOT EXISTS (
-                SELECT 1
-                FROM site_videos sv
-                WHERE sv.video_id = v.id
-                  AND (sv.status IS NULL OR sv.status <> 'available')
-              )
-            GROUP BY LOWER(TRIM(v.parsedArtist))
-          ) rv ON rv.artistKey = s.normalized_artist
-          WHERE s.first_letter = ?
-            AND s.video_count > 0
-          ORDER BY s.display_name ASC
-          LIMIT ${safeLimit}
-          OFFSET ${safeOffset}
-        `,
-        normalizedLetter,
-        normalizedLetter,
-      );
+      const now = Date.now();
+      const cachedPage = artistLetterPageCache.get(projectionPageCacheKey);
+      if (cachedPage && cachedPage.expiresAt > now) {
+        return cachedPage.rows;
+      }
 
-      if (projectedRows.length > 0 || safeOffset > 0) {
-        return projectedRows.map((row) => ({
-          ...mapArtistProjectionRow(row),
-          videoCount: Number(row.videoCount ?? 0),
-        }));
+      const inFlight = artistLetterPageInFlight.get(projectionPageCacheKey);
+      if (inFlight) {
+        return await inFlight;
+      }
+
+      const hasThumbnailColumn = await hasArtistStatsThumbnailColumn();
+      const queryPromise = (async () => {
+        const projectedRows = await prisma.$queryRawUnsafe<Array<{
+          displayName: string;
+          slug: string;
+          country: string | null;
+          genre: string | null;
+          videoCount: number | null;
+          thumbnailVideoId: string | null;
+        }>>(
+          `
+            SELECT
+              s.display_name AS displayName,
+              s.slug,
+              s.country,
+              s.genre,
+              s.video_count AS videoCount,
+              ${hasThumbnailColumn ? "s.thumbnail_video_id" : "NULL"} AS thumbnailVideoId
+            FROM artist_stats s
+            WHERE s.first_letter = ?
+              AND s.video_count > 0
+            ORDER BY s.display_name ASC
+            LIMIT ${safeLimit}
+            OFFSET ${safeOffset}
+          `,
+          normalizedLetter,
+        );
+
+        if (projectedRows.length > 0 || safeOffset > 0) {
+          const mapped = projectedRows.map((row) => ({
+            ...mapArtistProjectionRow(row),
+            videoCount: Number(row.videoCount ?? 0),
+          }));
+
+          artistLetterPageCache.set(projectionPageCacheKey, {
+            expiresAt: Date.now() + ARTIST_LETTER_PAGE_CACHE_TTL_MS,
+            rows: mapped,
+          });
+
+          return mapped;
+        }
+
+        return [];
+      })();
+
+      artistLetterPageInFlight.set(projectionPageCacheKey, queryPromise);
+
+      const projected = await queryPromise.finally(() => {
+        artistLetterPageInFlight.delete(projectionPageCacheKey);
+      });
+
+      if (projected.length > 0 || safeOffset > 0) {
+        return projected;
       }
     }
 
@@ -2563,167 +2605,77 @@ export async function getGenres() {
   }
 
   try {
-    const rows = await prisma.$queryRaw<Array<{ genre: string | null }>>`
-      SELECT name AS genre
-      FROM genres
-      WHERE name IS NOT NULL
-        AND TRIM(name) <> ''
-      ORDER BY name ASC
-      LIMIT 500
+    // Read from genre_cards which is the pre-built canonical store.
+    // Falls back to the genres table if genre_cards is empty (first run before batch script).
+    const rows = await prisma.$queryRaw<Array<{ genre: string }>>`
+      SELECT genre FROM genre_cards ORDER BY genre ASC LIMIT 1000
     `;
 
-    const genres = rows
-      .map((row) => row.genre?.trim() ?? "")
-      .filter((genre): genre is string => genre.length > 0);
+    if (rows.length > 0) {
+      const genres = rows.map((r) => r.genre);
+      genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres };
+      return genres;
+    }
 
-    const result = genres.length > 0 ? genres : seedGenres;
-    genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: result };
-    return result;
+    // genre_cards not yet populated — fall back to genres table
+    const fallbackRows = await prisma.$queryRaw<Array<{ genre: string }>>`
+      SELECT name AS genre FROM genres WHERE name IS NOT NULL AND TRIM(name) <> '' ORDER BY name ASC LIMIT 500
+    `;
+    const genres = fallbackRows.map((r) => r.genre);
+    genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres };
+    return genres;
   } catch {
-    return seedGenres;
+    return genreListCache?.genres ?? [];
   }
 }
 
 export async function getGenreCards() {
+  if (!hasDatabaseUrl()) {
+    return seedGenres.map((genre) => ({ genre, previewVideoId: null }));
+  }
+
   const now = Date.now();
   if (genreCardsCache && genreCardsCache.expiresAt > now) {
     return genreCardsCache.cards;
   }
 
   if (genreCardsInFlight) {
-    return genreCardsInFlight;
+    return genreCardsCache?.cards ?? [];
   }
 
   genreCardsInFlight = (async () => {
-    const genres = await getGenres();
-
-    const buildSeedFallbackCards = () => {
-      const pool = seedVideos
-        .map((video) => video.id)
-        .filter((id): id is string => /^[A-Za-z0-9_-]{11}$/.test(id));
-
-      if (pool.length === 0) {
-        return genres.map((genre) => ({ genre, previewVideoId: null }));
-      }
-
-      const usedPreviewVideoIds = new Set<string>();
-      return genres.map((genre, index) => {
-        const rotatedPool = [...pool.slice(index), ...pool.slice(0, index)];
-        const firstUnused = rotatedPool.find((candidate) => !usedPreviewVideoIds.has(candidate));
-        const previewVideoId = firstUnused ?? rotatedPool[0] ?? null;
-
-        if (previewVideoId) {
-          usedPreviewVideoIds.add(previewVideoId);
-        }
-
-        return { genre, previewVideoId };
-      });
-    };
-
-    if (!hasDatabaseUrl()) {
-      const seedCards = genres.map((genre) => ({ genre, previewVideoId: null }));
-      genreCardsCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, cards: seedCards };
-      return seedCards;
-    }
-
     try {
-      const cards = await withSoftTimeout("getGenreCards", CATEGORY_QUERY_TIMEOUT_MS, async () => {
-        const artistColumns = await getArtistColumnMap();
-        if (artistColumns.genreColumns.length === 0) {
-          return buildSeedFallbackCards();
-        }
+      const rows = await prisma.$queryRaw<Array<{ genre: string; thumbnailVideoId: string | null }>>`
+        SELECT genre, thumbnail_video_id AS thumbnailVideoId
+        FROM genre_cards
+        ORDER BY genre ASC
+        LIMIT 1000
+      `;
 
-        const artistNameColumn = escapeSqlIdentifier(artistColumns.name);
-        const genrePredicate = artistColumns.genreColumns
-          .map((column) => `a.${escapeSqlIdentifier(column)} LIKE CONCAT('%', g.name, '%')`)
-          .join(" OR ");
+      const cards: GenreCard[] = rows.map((row) => ({
+        genre: row.genre,
+        previewVideoId: row.thumbnailVideoId ?? null,
+      }));
 
-        const rows = await prisma.$queryRawUnsafe<Array<{ genre: string | null; previewCandidates: string | null }>>(
-          `
-            SELECT
-              g.name AS genre,
-              SUBSTRING_INDEX(
-                GROUP_CONCAT(
-                  DISTINCT v.videoId
-                  ORDER BY v.favourited DESC, v.views DESC, v.id ASC
-                ),
-                ',',
-                3
-              ) AS previewCandidates
-            FROM genres g
-            LEFT JOIN artists a
-              ON (${genrePredicate})
-            LEFT JOIN videos v
-              ON LOWER(TRIM(v.parsedArtist)) = LOWER(TRIM(a.${artistNameColumn}))
-              AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-              AND EXISTS (
-                SELECT 1
-                FROM site_videos sv
-                WHERE sv.video_id = v.id
-                  AND sv.status = 'available'
-              )
-            WHERE g.name IS NOT NULL
-              AND TRIM(g.name) <> ''
-            GROUP BY g.name
-            ORDER BY g.name ASC
-            LIMIT 500
-          `,
-        );
-
-        const candidateByGenre = new Map<string, string[]>();
-        for (const row of rows) {
-          const genre = row.genre?.trim();
-          if (!genre) {
-            continue;
-          }
-
-          const candidates = (row.previewCandidates ?? "")
-            .split(",")
-            .map((value) => value.trim())
-            .filter((value) => /^[A-Za-z0-9_-]{11}$/.test(value));
-          candidateByGenre.set(genre, candidates);
-        }
-
-        const cards: Array<{ genre: string; previewVideoId: string | null }> = [];
-        const usedPreviewVideoIds = new Set<string>();
-
-        for (const genre of genres) {
-          const candidates = candidateByGenre.get(genre) ?? [];
-          const firstUnused = candidates.find((videoId) => !usedPreviewVideoIds.has(videoId));
-          const previewVideoId = firstUnused ?? candidates[0] ?? null;
-
-          if (previewVideoId) {
-            usedPreviewVideoIds.add(previewVideoId);
-          }
-
-          cards.push({
-            genre,
-            previewVideoId,
-          });
-        }
-
-        const withPreviewCount = cards.reduce((count, card) => count + (card.previewVideoId ? 1 : 0), 0);
-        if (withPreviewCount < Math.ceil(genres.length * 0.2)) {
-          return buildSeedFallbackCards();
-        }
-
-        return cards;
-      });
-
-      genreCardsCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, cards };
+      genreCardsCache = { expiresAt: now + GENRE_CARDS_CACHE_TTL_MS, cards };
+      // Keep genre list in sync
+      genreListCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, genres: cards.map((c) => c.genre) };
       return cards;
     } catch {
-      const fallbackCards = buildSeedFallbackCards();
-      genreCardsCache = { expiresAt: now + GENRE_RESULTS_CACHE_TTL_MS, cards: fallbackCards };
-      return fallbackCards;
+      const stale = genreCardsCache?.cards ?? [];
+      genreCardsCache = { expiresAt: now + 30_000, cards: stale };
+      return stale;
     }
-  })();
-
-  try {
-    return await genreCardsInFlight;
-  } finally {
+  })().finally(() => {
     genreCardsInFlight = undefined;
+  });
+
+  // Await on first load so the page renders with real data
+  if (!genreCardsCache) {
+    return genreCardsInFlight;
   }
+
+  return genreCardsCache.cards;
 }
 
 export async function getAiTracks(): Promise<AiTrackRecord[]> {
@@ -3156,21 +3108,6 @@ function getPreviewUserId(userId?: number) {
   return userId ?? PREVIEW_DEFAULT_USER_ID;
 }
 
-function getPreviewFavouriteIds(userId?: number) {
-  const store = getPreviewStore();
-  const resolvedUserId = getPreviewUserId(userId);
-
-  const existing = store.favouriteIdsByUser.get(resolvedUserId);
-
-  if (existing) {
-    return existing;
-  }
-
-  const created = new Set(seedVideos.slice(0, 3).map((video) => video.id));
-  store.favouriteIdsByUser.set(resolvedUserId, created);
-  return created;
-}
-
 function getPreviewPlaylists(userId?: number) {
   const store = getPreviewStore();
   const resolvedUserId = getPreviewUserId(userId);
@@ -3297,42 +3234,33 @@ export async function getPlaylistById(id: string, userId?: number): Promise<Play
 }
 
 export async function getFavouriteVideos(userId?: number) {
-  if (hasDatabaseUrl() && userId) {
-    try {
-      const favourites = await prisma.favourite.findMany({
-        where: {
-          userId,
-        },
-        include: {
-          video: {
-            select: {
-              videoId: true,
-              title: true,
-              channelTitle: true,
-              favourited: true,
-              description: true,
-            },
-          },
-        },
-        take: 50,
-      });
-
-      if (favourites.length > 0) {
-        return favourites.map((entry) => mapVideo(entry.video));
-      }
-    } catch {
-      // Fall through to preview fallback.
-    }
+  if (!userId || !hasDatabaseUrl()) {
+    return [];
   }
 
-  const topVideos = await getTopVideos();
-  const combined = [...topVideos, ...seedVideos].filter(
-    (video, index, array) => array.findIndex((entry) => entry.id === video.id) === index,
-  );
-  const previewIds = getPreviewFavouriteIds(userId);
+  try {
+    const favourites = await prisma.favourite.findMany({
+      where: {
+        userId,
+      },
+      include: {
+        video: {
+          select: {
+            videoId: true,
+            title: true,
+            channelTitle: true,
+            favourited: true,
+            description: true,
+          },
+        },
+      },
+      take: 50,
+    });
 
-  const favourites = combined.filter((video) => previewIds.has(video.id));
-  return favourites.length > 0 ? favourites : seedVideos.slice(0, 3);
+    return favourites.map((entry) => mapVideo(entry.video));
+  } catch {
+    return [];
+  }
 }
 
 export async function updateFavourite(videoId: string, action: "add" | "remove", userId?: number) {
@@ -3383,17 +3311,9 @@ export async function updateFavourite(videoId: string, action: "add" | "remove",
     };
   }
 
-  const previewIds = getPreviewFavouriteIds(userId);
-
-  if (action === "add") {
-    previewIds.add(videoId);
-  } else {
-    previewIds.delete(videoId);
-  }
-
   return {
     videoId,
-    isFavourite: previewIds.has(videoId),
+    isFavourite: false,
     favourites: await getFavouriteVideos(userId),
   };
 }

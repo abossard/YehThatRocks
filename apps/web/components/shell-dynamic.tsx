@@ -174,6 +174,7 @@ function ShellDynamicInner({
   const prewarmedThumbnailIdsRef = useRef<Set<string>>(new Set());
   const pendingRelatedVideosRef = useRef<VideoRecord[] | null>(null);
   const relatedTransitionTimeoutRef = useRef<number | null>(null);
+  const watchNextRailRef = useRef<HTMLElement | null>(null);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const favouritesBlindInnerRef = useRef<HTMLDivElement | null>(null);
   const flashTimeoutRef = useRef<Record<FlashableChatMode, number | null>>({
@@ -378,7 +379,11 @@ function ShellDynamicInner({
       return;
     }
 
-    if (requestedVideoId === lastVideoIdRef.current) {
+    if (
+      requestedVideoId === lastVideoIdRef.current &&
+      currentVideo.id === requestedVideoId &&
+      !isResolvingRequestedVideo
+    ) {
       return;
     }
 
@@ -476,6 +481,11 @@ function ShellDynamicInner({
 
         if (data?.denied?.message) {
           setDeniedPlaybackMessage(String(data.denied.message));
+          setIsResolvingRequestedVideo(false);
+          if (!hasResolvedInitialVideoRef.current) {
+            hasResolvedInitialVideoRef.current = true;
+            setIsResolvingInitialVideo(false);
+          }
           return;
         }
 
@@ -524,7 +534,13 @@ function ShellDynamicInner({
         window.clearTimeout(retryTimeoutId);
       }
     };
-  }, [displayedRelatedVideos.length, relatedTransitionPhase, requestedVideoId]);
+  }, [
+    currentVideo.id,
+    displayedRelatedVideos.length,
+    isResolvingRequestedVideo,
+    relatedTransitionPhase,
+    requestedVideoId,
+  ]);
 
   useEffect(() => {
     if (!deniedPlaybackMessage) {
@@ -824,6 +840,9 @@ function ShellDynamicInner({
     }
 
     if (relatedTransitionPhase === "fading-out") {
+      if (watchNextRailRef.current) {
+        watchNextRailRef.current.scrollTop = 0;
+      }
       const delayMs = RELATED_FADE_OUT_BASE_MS + RELATED_FADE_STAGGER_MS * Math.max(0, displayedRelatedVideos.length - 1);
       relatedTransitionTimeoutRef.current = window.setTimeout(() => {
         const next = pendingRelatedVideosRef.current;
@@ -1405,6 +1424,7 @@ function ShellDynamicInner({
         </section>
 
         <aside
+          ref={watchNextRailRef}
           className={
             isOverlayRoute
               ? "rightRail panel translucent railOccluded"
@@ -1413,7 +1433,7 @@ function ShellDynamicInner({
           aria-hidden={isOverlayRoute}
           inert={isOverlayRoute ? true : undefined}
         >
-          <h2 className="railHeading">Related</h2>
+          <h2 className="railHeading">Watch Next</h2>
 
           <div
             className={`relatedStack${

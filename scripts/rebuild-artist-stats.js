@@ -80,6 +80,9 @@ function normalizeArtistKey(value) {
     : "";
 }
 
+const YOUTUBE_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const MAX_THUMBNAIL_CANDIDATES = 24;
+
 async function getArtistColumnMap(prisma) {
   const columns = await prisma.$queryRawUnsafe("SHOW COLUMNS FROM artists");
   const available = new Set(columns.map((column) => column.Field));
@@ -124,10 +127,22 @@ async function main() {
   const dryRun = process.argv.includes("--dry-run");
   const letter = parseArg("letter", "").trim().toUpperCase();
   const limit = Math.max(0, Number.parseInt(parseArg("limit", "0"), 10) || 0);
+  const startedAt = Date.now();
+
+  console.log("Starting artist_stats rebuild...");
+  console.log(
+    JSON.stringify({
+      dryRun,
+      letter: /^[A-Z]$/.test(letter) ? letter : "ALL",
+      limit: limit > 0 ? limit : "none",
+    }),
+  );
 
   try {
+    console.log("Loading schema metadata and source strategy...");
     const artistColumns = await getArtistColumnMap(prisma);
     const source = await getArtistVideoSource(prisma);
+    console.log(`Using source=${source}.`);
     const nameCol = escapeSqlIdentifier(artistColumns.name);
     const countryExpr = artistColumns.country ? escapeSqlIdentifier(artistColumns.country) : "NULL";
     const genreExpr = artistColumns.genreColumns.length > 0
@@ -135,6 +150,7 @@ async function main() {
       : "NULL";
     const whereLetter = /^[A-Z]$/.test(letter) ? `AND UPPER(LEFT(TRIM(${nameCol}), 1)) = ?` : "";
 
+    console.log("Loading artists dimension rows...");
     const artistRows = await prisma.$queryRawUnsafe(
       `
         SELECT
@@ -149,10 +165,12 @@ async function main() {
       `,
       ...(/^[A-Z]$/.test(letter) ? [letter] : []),
     );
+    console.log(`Loaded ${artistRows.length} artist rows.`);
 
     let countRows;
     let thumbnailRows;
     if (source === "videosbyartist") {
+      console.log("Computing playable video counts from videosbyartist...");
       const artistVideoColumns = await getArtistVideoColumnMap(prisma);
       const artistNameCol = escapeSqlIdentifier(artistVideoColumns.artistName);
       const videoRefCol = escapeSqlIdentifier(artistVideoColumns.videoRef);
@@ -186,23 +204,39 @@ async function main() {
         `,
         ...(/^[A-Z]$/.test(letter) ? [letter] : []),
       );
+      console.log(`Computed ${countRows.length} count groups.`);
 
+      console.log("Computing playable thumbnail candidates from videosbyartist...");
       thumbnailRows = await prisma.$queryRawUnsafe(
         `
           SELECT
             LOWER(TRIM(va.${artistNameCol})) AS artistKey,
-            SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', 1) AS thumbnailVideoId
+            SUBSTRING_INDEX(GROUP_CONCAT(v.videoId ORDER BY v.id ASC), ',', ${MAX_THUMBNAIL_CANDIDATES}) AS thumbnailVideoIds
           FROM videosbyartist va
           INNER JOIN videos v ON ${joinVideoExpr} = va.${videoRefCol}
           WHERE va.${artistNameCol} IS NOT NULL
             AND TRIM(va.${artistNameCol}) <> ''
             AND v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND (sv.status IS NULL OR sv.status <> 'available')
+            )
             ${countWhereLetter}
           GROUP BY LOWER(TRIM(va.${artistNameCol}))
         `,
         ...(/^[A-Z]$/.test(letter) ? [letter] : []),
       );
+      console.log(`Computed ${thumbnailRows.length} thumbnail groups.`);
     } else {
+      console.log("Computing playable video counts from parsedArtist...");
       const countWhereLetter = /^[A-Z]$/.test(letter) ? "AND parsedArtist LIKE ?" : "";
       countRows = await prisma.$queryRawUnsafe(
         `
@@ -231,23 +265,39 @@ async function main() {
         `,
         ...(/^[A-Z]$/.test(letter) ? [`${letter}%`] : []),
       );
+      console.log(`Computed ${countRows.length} count groups.`);
 
+      console.log("Computing playable thumbnail candidates from parsedArtist...");
       thumbnailRows = await prisma.$queryRawUnsafe(
         `
           SELECT
             LOWER(TRIM(parsedArtist)) AS artistKey,
-            SUBSTRING_INDEX(GROUP_CONCAT(videoId ORDER BY id ASC), ',', 1) AS thumbnailVideoId
-          FROM videos
+            SUBSTRING_INDEX(GROUP_CONCAT(videoId ORDER BY id ASC), ',', ${MAX_THUMBNAIL_CANDIDATES}) AS thumbnailVideoIds
+          FROM videos v
           WHERE parsedArtist IS NOT NULL
             AND TRIM(parsedArtist) <> ''
             AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+            AND EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND sv.status = 'available'
+            )
+            AND NOT EXISTS (
+              SELECT 1
+              FROM site_videos sv
+              WHERE sv.video_id = v.id
+                AND (sv.status IS NULL OR sv.status <> 'available')
+            )
             ${countWhereLetter}
-          GROUP BY LOWER(TRIM(parsedArtist))
+          GROUP BY LOWER(TRIM(v.parsedArtist))
         `,
         ...(/^[A-Z]$/.test(letter) ? [`${letter}%`] : []),
       );
+      console.log(`Computed ${thumbnailRows.length} thumbnail groups.`);
     }
 
+    console.log("Aggregating count and thumbnail maps...");
     const countByArtist = new Map();
     const displayNameByArtist = new Map();
     for (const row of countRows) {
@@ -262,16 +312,25 @@ async function main() {
       }
     }
 
-    const thumbnailByArtist = new Map();
+    const thumbnailCandidatesByArtist = new Map();
     for (const row of thumbnailRows) {
       const key = normalizeArtistKey(row.artistKey);
-      const thumbnailVideoId = typeof row.thumbnailVideoId === "string" ? row.thumbnailVideoId.trim() : "";
-      if (!key || !thumbnailVideoId) {
+      const rawCandidates = typeof row.thumbnailVideoIds === "string" ? row.thumbnailVideoIds : "";
+      if (!key || !rawCandidates) {
         continue;
       }
 
-      if (!thumbnailByArtist.has(key)) {
-        thumbnailByArtist.set(key, thumbnailVideoId);
+      const parsedCandidates = Array.from(
+        new Set(
+          rawCandidates
+            .split(",")
+            .map((candidate) => candidate.trim())
+            .filter((candidate) => YOUTUBE_VIDEO_ID_PATTERN.test(candidate)),
+        ),
+      );
+
+      if (parsedCandidates.length > 0) {
+        thumbnailCandidatesByArtist.set(key, parsedCandidates);
       }
     }
 
@@ -295,7 +354,7 @@ async function main() {
           firstLetter: String(row.name).trim().charAt(0).toUpperCase(),
           country: row.country ? String(row.country) : null,
           genre: row.genre ? String(row.genre) : null,
-          thumbnailVideoId: thumbnailByArtist.get(normalizedArtist) ?? null,
+          thumbnailVideoId: null,
           videoCount,
           source,
         };
@@ -333,13 +392,47 @@ async function main() {
         firstLetter: displayName.charAt(0).toUpperCase(),
         country: null,
         genre: null,
-        thumbnailVideoId: thumbnailByArtist.get(normalizedArtist) ?? null,
+        thumbnailVideoId: null,
         videoCount,
         source,
       });
     }
 
     const statsRows = Array.from(statsByArtist.values());
+    const prioritizedRows = [...statsRows].sort((left, right) => {
+      const countDiff = Number(right.videoCount ?? 0) - Number(left.videoCount ?? 0);
+      if (countDiff !== 0) {
+        return countDiff;
+      }
+
+      return left.displayName.localeCompare(right.displayName);
+    });
+    const usedThumbnailIds = new Set();
+    let dedupedThumbnailSelections = 0;
+
+    for (const row of prioritizedRows) {
+      const candidates = thumbnailCandidatesByArtist.get(row.normalizedArtist) ?? [];
+      if (candidates.length === 0) {
+        row.thumbnailVideoId = null;
+        continue;
+      }
+
+      const primary = candidates[0];
+      const uniqueCandidate = candidates.find((candidate) => !usedThumbnailIds.has(candidate));
+      const selected = uniqueCandidate ?? primary;
+
+      if (selected && selected !== primary) {
+        dedupedThumbnailSelections += 1;
+      }
+
+      row.thumbnailVideoId = selected ?? null;
+      if (selected) {
+        usedThumbnailIds.add(selected);
+      }
+    }
+
+    console.log(`Assigned thumbnails with ${dedupedThumbnailSelections} duplicate avoidance substitutions.`);
+    console.log(`Aggregated ${statsRows.length} candidate artist_stats rows.`);
 
     const limitedRows = limit > 0 ? statsRows.slice(0, limit) : statsRows;
 
@@ -347,23 +440,35 @@ async function main() {
 
     if (dryRun) {
       console.log("Dry run only; no database writes performed.");
+      console.log(`Completed in ${Date.now() - startedAt}ms.`);
       return;
     }
 
+    console.log(/^[A-Z]$/.test(letter)
+      ? `Deleting existing rows for first_letter=${letter}...`
+      : "Truncating existing artist_stats table...");
     if (/^[A-Z]$/.test(letter)) {
       await prisma.$executeRawUnsafe("DELETE FROM artist_stats WHERE first_letter = ?", letter);
     } else {
       await prisma.$executeRawUnsafe("TRUNCATE TABLE artist_stats");
     }
+    console.log("Existing rows cleared.");
 
     const thumbnailColumnRows = await prisma.$queryRawUnsafe(
       "SHOW COLUMNS FROM artist_stats LIKE 'thumbnail_video_id'",
     );
     const hasThumbnailColumn = thumbnailColumnRows.length > 0;
+    console.log(`Detected thumbnail column: ${hasThumbnailColumn ? "yes" : "no"}.`);
 
     const chunkSize = 1000;
+    const totalChunks = Math.max(1, Math.ceil(limitedRows.length / chunkSize));
+    console.log(`Writing ${limitedRows.length} rows in ${totalChunks} chunk(s)...`);
     for (let index = 0; index < limitedRows.length; index += chunkSize) {
       const chunk = limitedRows.slice(index, index + chunkSize);
+      const chunkNumber = Math.floor(index / chunkSize) + 1;
+      const chunkStart = index + 1;
+      const chunkEnd = index + chunk.length;
+      console.log(`Inserting chunk ${chunkNumber}/${totalChunks} (rows ${chunkStart}-${chunkEnd})...`);
       const placeholders = chunk
         .map(() => (hasThumbnailColumn ? "(?, ?, ?, ?, ?, ?, ?, ?, ?)" : "(?, ?, ?, ?, ?, ?, ?, ?)"))
         .join(", ");
@@ -424,9 +529,12 @@ async function main() {
         `,
         ...params,
       );
+
+      console.log(`Chunk ${chunkNumber}/${totalChunks} inserted.`);
     }
 
     console.log(`Wrote ${limitedRows.length} rows to artist_stats.`);
+    console.log(`Completed in ${Date.now() - startedAt}ms.`);
   } finally {
     await prisma.$disconnect();
   }

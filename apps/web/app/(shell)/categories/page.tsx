@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
+import { CategoriesScrollReset } from "@/components/categories-scroll-reset";
 import { CloseLink } from "@/components/close-link";
 import { getGenreCards, getGenreSlug } from "@/lib/catalog-data";
 
@@ -9,6 +10,7 @@ export default async function CategoriesPage() {
 
   return (
     <>
+      <CategoriesScrollReset />
       <div className="favouritesBlindBar">
         <strong>
           <span className="categoryHeaderBreadcrumb">☣ Categories</span>
@@ -21,7 +23,7 @@ export default async function CategoriesPage() {
           <Link
             key={genre}
             href={`/categories/${getGenreSlug(genre)}`}
-            prefetch
+            prefetch={false}
             className="catalogCard categoryCard linkedCard"
           >
             {previewVideoId ? (

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getCurrentVideo, getRelatedVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
+import { getCurrentVideo, getRelatedVideos, getTopVideos, getVideoPlaybackDecision, pruneVideoAndAssociationsByVideoId } from "@/lib/catalog-data";
 
 const CURRENT_VIDEO_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
 const CURRENT_VIDEO_CACHE_TTL_MS = 20_000;
@@ -25,6 +25,35 @@ const currentVideoCache = new Map<string, { expiresAt: number; payload: CurrentV
 const currentVideoPendingCache = new Map<string, { expiresAt: number; payload: PendingPayload }>();
 const currentVideoInflight = new Map<string, Promise<CurrentVideoResolvePayload>>();
 let currentVideoResolverBlockedUntil = 0;
+
+function shuffleVideos<T>(rows: T[]) {
+  const shuffled = [...rows];
+
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1));
+    const current = shuffled[index];
+    shuffled[index] = shuffled[randomIndex];
+    shuffled[randomIndex] = current;
+  }
+
+  return shuffled;
+}
+
+function uniqueVideosById<T extends { id: string }>(rows: T[]) {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+
+  for (const row of rows) {
+    if (seen.has(row.id)) {
+      continue;
+    }
+
+    seen.add(row.id);
+    unique.push(row);
+  }
+
+  return unique;
+}
 
 function logCurrentVideoRoute(event: string, detail?: Record<string, unknown>) {
   if (!CURRENT_VIDEO_DEBUG_ENABLED) {
@@ -127,11 +156,22 @@ export async function GET(request: NextRequest) {
     }
 
     const relatedVideos = await getRelatedVideos(currentVideo.id);
-    const payload: CurrentVideoPayload = { currentVideo, relatedVideos };
+    const targetRelatedCount = 10;
+    let paddedRelatedVideos = relatedVideos;
+
+    if (relatedVideos.length < targetRelatedCount) {
+      const topVideos = await getTopVideos(100);
+      const blockedIds = new Set([currentVideo.id, ...relatedVideos.map((video) => video.id)]);
+      const fillerPool = uniqueVideosById(topVideos.filter((video) => !blockedIds.has(video.id)));
+      const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);
+      paddedRelatedVideos = [...relatedVideos, ...filler];
+    }
+
+    const normalizedPayload: CurrentVideoPayload = { currentVideo, relatedVideos: paddedRelatedVideos };
 
     currentVideoCache.set(cacheKey, {
       expiresAt: Date.now() + CURRENT_VIDEO_CACHE_TTL_MS,
-      payload,
+      payload: normalizedPayload,
     });
 
     currentVideoResolverBlockedUntil = 0;
@@ -139,10 +179,10 @@ export async function GET(request: NextRequest) {
     logCurrentVideoRoute("request:success", {
       requestedVideoId: v,
       resolvedVideoId: currentVideo.id,
-      relatedCount: relatedVideos.length,
+      relatedCount: paddedRelatedVideos.length,
     });
 
-    return payload;
+    return normalizedPayload;
   })();
 
   const boundedResolvePromise = Promise.race<CurrentVideoResolvePayload>([
