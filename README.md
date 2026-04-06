@@ -27,6 +27,10 @@ This is **not**:
 
 This is a showcase of what **one experienced programmer** can do when AI removes the friction from work they already know how to do.
 
+## Deployment
+
+For VPS deployment with Docker Compose and `systemd`, see [DEPLOY_VPS.md](DEPLOY_VPS.md).
+
 ## Licence
 
 **YehThatRocks source code is not licensed for commercial use.**
