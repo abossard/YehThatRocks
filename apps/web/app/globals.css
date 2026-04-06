@@ -1506,6 +1506,85 @@ h1 {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.shareModalBackdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(6, 4, 4, 0.76);
+  backdrop-filter: blur(4px);
+}
+
+.shareModal {
+  width: min(92vw, 560px);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: linear-gradient(180deg, rgba(20, 10, 8, 0.95), rgba(10, 6, 5, 0.98));
+  box-shadow: 0 26px 65px rgba(0, 0, 0, 0.55);
+  padding: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.shareModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.shareModalHeader strong {
+  color: #fff7f3;
+  font-size: 1.05rem;
+}
+
+.shareModalSubtitle {
+  margin: 0;
+  color: rgba(255, 219, 210, 0.9);
+  font-size: 0.9rem;
+}
+
+.shareModalGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.shareModalTarget {
+  min-height: 40px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+  text-align: left;
+  padding: 9px 11px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.shareModalTarget:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.shareModalUrlRow {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 680px) {
+  .shareModalGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .shareModalUrlRow {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── End overlay controls ─────────────────────────────────────── */
 
 .nowPlayingOverlay {
@@ -3013,6 +3092,241 @@ h1 {
 
 .categoryHeaderBreadcrumbCurrent {
   color: #ffffff;
+}
+
+.categoryHeaderWikiLink {
+  margin-left: auto;
+  color: rgba(255, 240, 236, 0.9);
+  text-decoration: none;
+  border: 1px solid rgba(255, 110, 78, 0.4);
+  border-radius: 999px;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.82rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.categoryHeaderWikiLink:hover {
+  background: rgba(255, 110, 78, 0.16);
+}
+
+.artistInlineLink {
+  color: rgba(255, 232, 223, 0.92);
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 115, 85, 0.55);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.artistInlineLink:hover,
+.artistInlineLink:focus-visible {
+  color: #ffffff;
+  text-decoration-color: rgba(255, 146, 120, 0.88);
+  outline: none;
+}
+
+.artistWikiPage {
+  display: grid;
+  gap: 18px;
+  max-width: 1080px;
+  margin: 0 auto;
+}
+
+.artistWikiHeader {
+  display: grid;
+  gap: 6px;
+}
+
+.artistWikiHero {
+  text-align: center;
+  padding: 18px 16px 6px;
+}
+
+.artistWikiHeroKicker {
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: 0.78rem;
+  color: rgba(255, 203, 191, 0.82);
+}
+
+.artistWikiHeader h1 {
+  margin: 0;
+  font-size: clamp(2rem, 4.8vw, 3.6rem);
+  line-height: 1.04;
+  text-wrap: balance;
+  text-shadow: 0 8px 28px rgba(0, 0, 0, 0.42);
+}
+
+.artistWikiMeta {
+  margin: 0;
+  color: rgba(255, 232, 223, 0.74);
+  font-size: 0.9rem;
+}
+
+.artistWikiFlow {
+  display: grid;
+  gap: 20px;
+}
+
+.artistWikiFlow::after {
+  content: "";
+  display: block;
+  clear: both;
+}
+
+.artistWikiTopRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(270px, 36vw, 390px);
+  gap: 16px;
+  align-items: stretch;
+}
+
+.artistWikiLeadFigure {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.artistWikiLeadImage {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: rgba(8, 6, 6, 0.7);
+  display: block;
+}
+
+.artistWikiLeadFigure figcaption {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+}
+
+.artistWikiLeadFigure figcaption a {
+  color: rgba(180, 220, 255, 0.96);
+}
+
+.artistWikiLeadFigure figcaption a:hover {
+  color: #ffffff;
+}
+
+.artistWikiOverviewSection {
+  margin: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 4px;
+}
+
+.artistWikiOverviewSection h2,
+.artistWikiOverviewSection p {
+  margin: 0;
+}
+
+.artistWikiGallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.artistWikiImageCard {
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.artistWikiImage {
+  width: 100%;
+  height: 188px;
+  object-fit: cover;
+  display: block;
+}
+
+.artistWikiImageCard figcaption {
+  padding: 8px 10px;
+  font-size: 0.8rem;
+  color: rgba(242, 245, 255, 0.82);
+}
+
+.artistWikiImageCard figcaption a {
+  color: rgba(180, 220, 255, 0.96);
+}
+
+.artistWikiImageCard figcaption a:hover {
+  color: #ffffff;
+}
+
+.artistWikiSection {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  display: grid;
+  gap: 10px;
+}
+
+.artistWikiSection h2,
+.artistWikiSection h3 {
+  margin: 0;
+}
+
+.artistWikiSection p {
+  margin: 0;
+  line-height: 1.58;
+}
+
+.artistWikiSection.artistWikiOverviewSection {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: flex-start;
+  text-align: left;
+  gap: 4px;
+  height: 100%;
+}
+
+.artistWikiSection.artistWikiOverviewSection h2,
+.artistWikiSection.artistWikiOverviewSection p {
+  margin: 0;
+}
+
+.artistWikiList,
+.artistWikiSourceList {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.artistWikiSourceList a {
+  color: rgba(180, 220, 255, 0.96);
+}
+
+.artistWikiSourceList a:hover {
+  color: #ffffff;
+}
+
+.artistWikiNote {
+  color: rgba(255, 232, 223, 0.8);
+  font-size: 0.93rem;
+}
+
+@media (max-width: 900px) {
+  .artistWikiTopRow {
+    grid-template-columns: 1fr;
+    margin-bottom: 14px;
+  }
+
+  .artistWikiLeadFigure {
+    width: min(100%, 480px);
+    margin: 0 auto;
+  }
 }
 
 .contractHint {

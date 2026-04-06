@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { VideoRecord } from "@/lib/catalog";
 
 type FavouritesManagerProps = {
@@ -49,7 +50,11 @@ export function FavouritesManager({ favourites, candidates, isAuthenticated }: F
               <Link href={`/?v=${track.id}`} className="cardTitleLink">
                 <h3>{track.title}</h3>
               </Link>
-              <p>{track.channelTitle}</p>
+              <p>
+                <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                  {track.channelTitle}
+                </ArtistWikiLink>
+              </p>
             </div>
             <button type="button" onClick={() => updateFavourite(track.id, "remove")} disabled={isPending}>
               Remove

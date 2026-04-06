@@ -10,7 +10,11 @@ const PENDING_ARTIST_BREADCRUMB_KEY = "ytr:pending-artist-breadcrumb";
 
 export default function ArtistDetailLoading() {
   const pathname = usePathname();
-  const slug = useMemo(() => pathname.split("/").filter(Boolean).at(-1) ?? "", [pathname]);
+  const isWikiRoute = pathname.endsWith("/wiki");
+  const slug = useMemo(() => {
+    const parts = pathname.split("/").filter(Boolean);
+    return isWikiRoute ? parts.at(-2) ?? "" : parts.at(-1) ?? "";
+  }, [isWikiRoute, pathname]);
   const [artistLabel, setArtistLabel] = useState("Loading...");
 
   useEffect(() => {
@@ -52,7 +56,7 @@ export default function ArtistDetailLoading() {
           <span />
           <span />
         </span>
-        <span>Loading artist videos...</span>
+        <span>{isWikiRoute ? "Loading wiki..." : "Loading artist videos..."}</span>
       </div>
     </>
   );

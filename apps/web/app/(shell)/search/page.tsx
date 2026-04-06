@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { CloseLink } from "@/components/close-link";
 import { getGenreSlug, searchCatalog } from "@/lib/catalog-data";
 
@@ -30,13 +31,19 @@ export default async function SearchPage({ searchParams }: SearchPageProps) {
       </div>
       <div className="trackStack">
         {uniqueVideos.map((video) => (
-          <Link key={video.id} href={`/?v=${video.id}&resume=1`} className="trackCard linkedCard">
-            <div>
-              <h3>{video.title}</h3>
-              <p>{video.channelTitle}</p>
-            </div>
-            <span className="queueBadge">Play</span>
-          </Link>
+          <article key={video.id} className="trackCard">
+            <Link href={`/?v=${video.id}&resume=1`} className="linkedCard trackCardMainLink">
+              <div>
+                <h3>{video.title}</h3>
+                <p>
+                  <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                    {video.channelTitle}
+                  </ArtistWikiLink>
+                </p>
+              </div>
+              <span className="queueBadge">Play</span>
+            </Link>
+          </article>
         ))}
       </div>
 

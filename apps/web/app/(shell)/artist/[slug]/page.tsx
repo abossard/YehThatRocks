@@ -6,6 +6,7 @@ import { ArtistVideoLink } from "@/components/artist-video-link";
 import { CloseLink } from "@/components/close-link";
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { getArtistBySlug, getVideosByArtist } from "@/lib/catalog-data";
+import { withVideoContext } from "@/lib/artist-routing";
 
 type ArtistPageProps = {
   params: Promise<{ slug: string }>;
@@ -31,6 +32,7 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
   if (v) artistsParams.set("v", v);
   if (resume) artistsParams.set("resume", resume);
   const artistsHref = artistsParams.toString() ? `/artists?${artistsParams.toString()}` : "/artists";
+  const wikiHref = withVideoContext(`/artist/${encodeURIComponent(artist.slug)}/wiki`, v, resume === "1");
 
   const artistVideos = await getVideosByArtist(artist.name);
 
@@ -47,6 +49,7 @@ export default async function ArtistPage({ params, searchParams }: ArtistPagePro
             <span className="categoryHeaderBreadcrumbCurrent" aria-current="page">{artist.name}</span>
           </span>
         </strong>
+        <Link href={wikiHref} className="categoryHeaderWikiLink">Wiki</Link>
         <CloseLink />
       </div>
 

@@ -61,6 +61,28 @@ async function fetchJson(url, init, timeoutMs) {
   }
 }
 
+async function fetchText(url, init, timeoutMs) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      ...init,
+      signal: controller.signal,
+      headers: {
+        "Cache-Control": "no-cache",
+        ...(init?.headers || {}),
+      },
+    });
+
+    const body = await response.text().catch(() => "");
+    return { response, body };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 function uniqueById(videos) {
   const seen = new Set();
   const unique = [];
@@ -159,7 +181,37 @@ async function main() {
     }
   }
 
-  // 4) Chat endpoints must reject unauthenticated requests.
+  // 4) Share preview and short share routes should be reachable and shape-safe.
+  if (selectedVideoId) {
+    const sharePreviewUrl = `${baseUrl}/api/videos/share-preview?v=${encodeURIComponent(selectedVideoId)}`;
+    const sharePreviewResult = await fetchJson(sharePreviewUrl, { method: "GET" }, timeoutMs).catch((error) => ({ error }));
+
+    if (sharePreviewResult?.error) {
+      assertInvariant(false, "Share-preview endpoint reachable", String(sharePreviewResult.error), failures);
+    } else {
+      const { response, payload } = sharePreviewResult;
+      assertInvariant(response.ok, "Share-preview endpoint returns 2xx", `status=${response.status}`, failures);
+      assertInvariant(payload?.video?.id === selectedVideoId, "Share-preview payload returns requested video id", `video.id=${String(payload?.video?.id)}`, failures);
+      assertInvariant(typeof payload?.video?.title === "string" && payload.video.title.length > 0, "Share-preview payload includes a title", `title=${String(payload?.video?.title)}`, failures);
+    }
+
+    const shortShareUrl = `${baseUrl}/s/${encodeURIComponent(selectedVideoId)}`;
+    const shortShareResult = await fetchText(shortShareUrl, { method: "GET" }, timeoutMs).catch((error) => ({ error }));
+
+    if (shortShareResult?.error) {
+      assertInvariant(false, "Short share route reachable", String(shortShareResult.error), failures);
+    } else {
+      const { response, body } = shortShareResult;
+      const contentType = response.headers.get("content-type") || "";
+
+      assertInvariant(response.ok, "Short share route returns 2xx", `status=${response.status}`, failures);
+      assertInvariant(contentType.includes("text/html"), "Short share route returns HTML", `content-type=${contentType}`, failures);
+      assertInvariant(body.includes('property="og:title"'), "Short share route emits Open Graph title metadata", "missing og:title", failures);
+      assertInvariant(body.includes('window.location.replace'), "Short share route includes redirect script", "missing redirect script", failures);
+    }
+  }
+
+  // 5) Chat endpoints must reject unauthenticated requests.
   const chatGetUrl = `${baseUrl}/api/chat?mode=global`;
   const chatPostUrl = `${baseUrl}/api/chat`;
   const chatStreamUrl = `${baseUrl}/api/chat/stream?mode=global`;

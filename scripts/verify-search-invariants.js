@@ -54,10 +54,13 @@ function main() {
 
   // Results: videos linked with resume flag
   assertContains(searchPageSource, "/?v=${video.id}&resume=1", "Search page video links include resume=1 flag", failures);
+  assertContains(searchPageSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Search page imports artist wiki link helper", failures);
+  assertContains(searchPageSource, '<ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">', "Search page wraps video artist names with wiki links", failures);
 
   // Results: artists and genres rendered
   assertContains(searchPageSource, "/artist/${artist.slug}", "Search page artist links route to /artist/<slug>", failures);
   assertContains(searchPageSource, "/categories/${getGenreSlug(genre)}", "Search page genre links route to /categories/<slug>", failures);
+  assertContains(globalCssSource, ".artistInlineLink", "Search-linked artist names share the inline wiki-link style", failures);
 
   // --- Search API route: public, no authentication required ---
   assertNotContains(searchRouteSource, "requireApiAuth", "Search GET route does not require authentication (public endpoint)", failures);

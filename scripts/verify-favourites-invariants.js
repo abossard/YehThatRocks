@@ -53,6 +53,8 @@ function main() {
   // --- FavouritesGrid: optimistic removal ---
   assertContains(favouritesGridSource, "setFavourites((current) => current.filter((track) => track.id !== videoId))", "FavouritesGrid removes track from local state optimistically", failures);
   assertContains(favouritesGridSource, "action: \"remove\"", "FavouritesGrid sends remove action to favourites API", failures);
+  assertContains(favouritesGridSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "FavouritesGrid imports artist wiki link helper", failures);
+  assertContains(favouritesGridSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "FavouritesGrid wraps artist names with wiki links", failures);
 
   // --- FavouritesGrid: auth-gated error handling ---
   assertContains(favouritesGridSource, "response.status === 401 || response.status === 403", "FavouritesGrid handles 401/403 from favourites API gracefully", failures);
@@ -87,6 +89,7 @@ function main() {
   assertContains(globalCssSource, ".favouritesCatalogGrid", "globals.css defines .favouritesCatalogGrid layout", failures);
   assertContains(globalCssSource, ".favouritesDeleteButton", "globals.css defines .favouritesDeleteButton style", failures);
   assertContains(globalCssSource, ".favouritesEmptyState", "globals.css defines .favouritesEmptyState style", failures);
+  assertContains(globalCssSource, ".artistInlineLink", "globals.css defines inline artist wiki link styling", failures);
 
   if (failures.length > 0) {
     console.error("Favourites invariant check failed.");

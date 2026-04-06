@@ -1848,6 +1848,46 @@ export async function getCurrentVideo(videoId?: string) {
   }
 }
 
+export async function getVideoForSharing(videoId?: string) {
+  const normalizedVideoId = normalizeYouTubeVideoId(videoId);
+
+  if (!normalizedVideoId) {
+    return null;
+  }
+
+  if (!hasDatabaseUrl()) {
+    const seedVideo = getSeedVideoById(normalizedVideoId);
+    return seedVideo?.id === normalizedVideoId ? seedVideo : null;
+  }
+
+  try {
+    const rows = await prisma.$queryRaw<Array<RankedVideoRow>>`
+      SELECT
+        videoId,
+        title,
+        NULL AS channelTitle,
+        favourited,
+        description
+      FROM videos
+      WHERE videoId = ${normalizedVideoId}
+        AND videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+      LIMIT 1
+    `;
+
+    const row = rows[0];
+
+    if (row) {
+      return mapVideo(row);
+    }
+
+    const seedVideo = getSeedVideoById(normalizedVideoId);
+    return seedVideo?.id === normalizedVideoId ? seedVideo : null;
+  } catch {
+    const seedVideo = getSeedVideoById(normalizedVideoId);
+    return seedVideo?.id === normalizedVideoId ? seedVideo : null;
+  }
+}
+
 export async function getVideoPlaybackDecision(videoId?: string): Promise<PlaybackDecision> {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
 

@@ -50,6 +50,8 @@ function main() {
   assertContains(top100LinkSource, "onFocus={warmSelection}", "Top 100 warmed link warms on focus", failures);
   assertContains(top100LinkSource, "onPointerDown={warmSelection}", "Top 100 warmed link warms on pointer-down", failures);
   assertContains(top100LinkSource, "onClick={warmSelection}", "Top 100 warmed link warms on click", failures);
+  assertContains(top100LinkSource, 'import { ArtistWikiLink } from "@/components/artist-wiki-link";', "Top 100 warmed link imports artist wiki link helper", failures);
+  assertContains(top100LinkSource, '<ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">', "Top 100 warmed link wraps artist name with wiki link", failures);
 
   // Top 100 ranking must use favourite counts, not a boolean one-favourite flag.
   assertContains(catalogDataSource, "WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'", "Top 100 pool filters to valid YouTube ids", failures);
@@ -80,6 +82,7 @@ function main() {
   assertContains(globalCssSource, ".trackCard.leaderboardCard {", "Leaderboard card rows have scoped transition styles", failures);
   assertContains(globalCssSource, ".trackCard.leaderboardCard:hover {", "Leaderboard card rows turn red on hover", failures);
   assertContains(globalCssSource, "rgba(170, 30, 17", "Leaderboard hover uses the standard red gradient", failures);
+  assertContains(globalCssSource, ".artistInlineLink", "Leaderboard rows reuse inline artist wiki link styling", failures);
 
   if (failures.length > 0) {
     console.error("Top 100 UI invariant check failed.");

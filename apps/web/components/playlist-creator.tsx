@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { VideoRecord } from "@/lib/catalog";
 
 type PlaylistCreatorProps = {
@@ -76,7 +77,15 @@ export function PlaylistCreator({ suggestedVideos, isAuthenticated }: PlaylistCr
               disabled={isPending}
             >
               <strong>{video.title}</strong>
-              <span>{video.channelTitle}</span>
+              <span>
+                <ArtistWikiLink
+                  artistName={video.channelTitle}
+                  videoId={video.id}
+                  className="artistInlineLink"
+                >
+                  {video.channelTitle}
+                </ArtistWikiLink>
+              </span>
             </button>
           );
         })}

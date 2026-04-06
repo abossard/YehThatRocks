@@ -11,6 +11,11 @@ const files = {
   chatRoute: path.join(ROOT, "apps/web/app/api/chat/route.ts"),
   chatStreamRoute: path.join(ROOT, "apps/web/app/api/chat/stream/route.ts"),
   currentVideoRoute: path.join(ROOT, "apps/web/app/api/current-video/route.ts"),
+  sharePreviewRoute: path.join(ROOT, "apps/web/app/api/videos/share-preview/route.ts"),
+  shareHtmlRoute: path.join(ROOT, "apps/web/app/s/[videoId]/route.ts"),
+  shareMetadata: path.join(ROOT, "apps/web/lib/share-metadata.ts"),
+  chatSharedVideo: path.join(ROOT, "apps/web/lib/chat-shared-video.ts"),
+  artistWikiLink: path.join(ROOT, "apps/web/components/artist-wiki-link.tsx"),
   css: path.join(ROOT, "apps/web/app/globals.css"),
 };
 
@@ -42,6 +47,11 @@ function main() {
   const chatRouteSource = read(files.chatRoute);
   const chatStreamRouteSource = read(files.chatStreamRoute);
   const currentVideoRouteSource = read(files.currentVideoRoute);
+  const sharePreviewRouteSource = read(files.sharePreviewRoute);
+  const shareHtmlRouteSource = read(files.shareHtmlRoute);
+  const shareMetadataSource = read(files.shareMetadata);
+  const chatSharedVideoSource = read(files.chatSharedVideo);
+  const artistWikiLinkSource = read(files.artistWikiLink);
   const cssSource = read(files.css);
 
   // Watch Next and current-video resolver invariants.
@@ -59,7 +69,8 @@ function main() {
   assertContains(playerExperienceSource, "const RESUME_KEY = \"yeh-player-resume\";", "Player defines resume snapshot key", failures);
   assertContains(playerExperienceSource, "window.localStorage.setItem(AUTOPLAY_KEY, String(nextValue));", "Player writes autoplay preference to localStorage", failures);
   assertContains(playerExperienceSource, "const activePlaylistId = searchParams.get(\"pl\");", "Player reads playlist context from query params", failures);
-  assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
+  assertContains(playerExperienceSource, "const playlistId = activePlaylistId;", "Player snapshots active playlist id before async loading", failures);
+  assertContains(playerExperienceSource, "const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {", "Player loads playlist sequence for ordered playback", failures);
   assertContains(playerExperienceSource, "const shouldUseTopFallback =", "Player uses Top 100 fallback when Watch Next pool is small", failures);
   assertContains(playerExperienceSource, "const shouldAutoAdvance =", "Player computes auto-advance using playlist/deep-link/autoplay guard", failures);
   assertContains(playerExperienceSource, "const [showEndedChoiceOverlay, setShowEndedChoiceOverlay] = useState(false);", "Player tracks autoplay-off end chooser overlay state", failures);
@@ -76,6 +87,12 @@ function main() {
   assertContains(playerExperienceSource, "showUnavailableOverlayMessage();", "Player shows unavailable apology overlay when runtime checks fail", failures);
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
   assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
+  assertContains(playerExperienceSource, "const [showShareModal, setShowShareModal] = useState(false);", "Player tracks modal share state", failures);
+  assertContains(playerExperienceSource, "setShowShareModal(true);", "Player opens share modal from social share action", failures);
+  assertContains(playerExperienceSource, 'className="shareModalBackdrop"', "Player renders share modal backdrop", failures);
+  assertContains(playerExperienceSource, 'buildCanonicalShareUrl(currentVideo.id)', "Player uses canonical short share URLs", failures);
+  assertContains(playerExperienceSource, '<ArtistWikiLink', "Player renders artist wiki links in player surfaces", failures);
+  assertContains(playerExperienceSource, 'asButton', "Player uses button mode for footer artist wiki control", failures);
 
   // Player hover-controls recovery invariants.
   assertContains(playerExperienceSource, "playerFrameRef.current?.matches(\":hover\")", "Player checks real hover state via :hover pseudo-class after pathname change", failures);
@@ -96,6 +113,8 @@ function main() {
   assertContains(shellDynamicSource, "const response = await fetchWithAuthRetry(\"/api/chat\", {", "Shell posts chat messages via authenticated API call", failures);
   assertContains(shellDynamicSource, "videoId: chatMode === \"video\" ? currentVideo.id : undefined,", "Shell sends video chat context when posting", failures);
   assertContains(shellDynamicSource, "node.scrollTop = node.scrollHeight;", "Shell auto-scrolls chat list to latest message", failures);
+  assertContains(shellDynamicSource, 'fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`)', "Shared chat cards resolve preview metadata via share-preview API", failures);
+  assertContains(shellDynamicSource, 'const routeLoadingLabel = pathname.endsWith("/wiki") ? "Loading wiki" : "Loading video";', "Shell loading fallback derives wiki-aware copy", failures);
 
   // Chat API invariants.
   assertContains(chatRouteSource, "const authResult = await requireApiAuth(request);", "Chat REST API requires authenticated session", failures);
@@ -110,6 +129,21 @@ function main() {
   assertContains(chatStreamRouteSource, "const stream = new ReadableStream({", "Chat stream API uses SSE readable stream", failures);
   assertContains(chatStreamRouteSource, "controller.enqueue(encoder.encode(\": heartbeat\\n\\n\"));", "Chat stream API emits heartbeat comments", failures);
   assertContains(chatStreamRouteSource, "\"Content-Type\": \"text/event-stream\"", "Chat stream API sets SSE content type", failures);
+
+  // Share and artist wiki helper invariants.
+  assertContains(sharePreviewRouteSource, 'const video = await getVideoForSharing(videoId);', "Share-preview API resolves lightweight share payloads", failures);
+  assertContains(sharePreviewRouteSource, 'return NextResponse.json({', "Share-preview API returns JSON payload", failures);
+  assertContains(shareHtmlRouteSource, 'const shareMetadata = await resolveShareMetadataForOrigin(rawVideoId, titleHint, siteOrigin);', "Short share route resolves host-aware metadata", failures);
+  assertContains(shareHtmlRouteSource, '<meta property="og:title"', "Short share route emits Open Graph metadata", failures);
+  assertContains(shareMetadataSource, 'export function buildCanonicalShareUrl(videoId: string, titleHint?: string, origin?: string)', "Share metadata exposes canonical short-link builder", failures);
+  assertContains(shareMetadataSource, 'const base = `${siteOrigin}/s/${encodeURIComponent(videoId)}`;', "Canonical share URLs use /s/<videoId>", failures);
+  assertContains(chatSharedVideoSource, 'const SHARED_VIDEO_FIELD_SEPARATOR = "\\t";', "Shared chat video payload supports structured fields", failures);
+  assertContains(chatSharedVideoSource, 'return {', "Shared chat video parsing returns structured payload object", failures);
+  assertContains(artistWikiLinkSource, 'router.push(targetHref);', "Artist wiki link performs client-side navigation", failures);
+  assertContains(cssSource, '.shareModalBackdrop', "Share modal backdrop styles are defined", failures);
+  assertContains(cssSource, '.shareModalGrid', "Share modal platform grid styles are defined", failures);
+  assertContains(cssSource, '.categoryHeaderWikiLink', "Artist wiki header link styles are defined", failures);
+  assertContains(cssSource, '.artistInlineLink', "Artist wiki inline link styles are defined", failures);
 
   if (failures.length > 0) {
     console.error("Core experience invariant check failed.");

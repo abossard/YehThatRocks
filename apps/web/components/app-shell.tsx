@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Suspense, type ReactNode } from "react";
 
 import { AuthLoginForm } from "@/components/auth-login-form";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { PlayerExperience } from "@/components/player-experience";
 import { getDataSourceStatus } from "@/lib/catalog-data";
 import { chatMessages, navItems, type VideoRecord } from "@/lib/catalog";
@@ -220,7 +221,11 @@ export async function AppShell({
                 </div>
                 <div>
                   <h3>{track.title}</h3>
-                  <p>{track.channelTitle}</p>
+                  <p>
+                    <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                      {track.channelTitle}
+                    </ArtistWikiLink>
+                  </p>
                 </div>
               </Link>
             ))}

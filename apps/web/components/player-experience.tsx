@@ -5,6 +5,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import type { VideoRecord } from "@/lib/catalog";
 import { buildSharedVideoMessage } from "@/lib/chat-shared-video";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
+import { buildCanonicalShareUrl } from "@/lib/share-metadata";
 
 type PlayerExperienceProps = {
   currentVideo: VideoRecord;
@@ -87,7 +89,6 @@ const RANDOM_NEXT_MIN_WATCH_NEXT_POOL = 5;
 const UNAVAILABLE_PLAYER_CODES = new Set([5, 100, 101, 150]);
 const PLAYER_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_PLAYER === "1";
 const FLOW_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.NEXT_PUBLIC_DEBUG_FLOW === "1";
-const CANONICAL_SITE_ORIGIN = "https://yehthatrocks.com";
 const UNAVAILABLE_OVERLAY_MESSAGE = "Sorry, this video is no longer available. Please choose another track.";
 const PLAYLISTS_UPDATED_EVENT = "ytr:playlists-updated";
 
@@ -181,10 +182,6 @@ function switchPlayerVideo(player: YouTubePlayer, videoId: string) {
   return false;
 }
 
-function buildCanonicalShareUrl(videoId: string) {
-  return `${CANONICAL_SITE_ORIGIN}/?v=${encodeURIComponent(videoId)}`;
-}
-
 export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExperienceProps) {
   const pathname = usePathname();
   const router = useRouter();
@@ -226,6 +223,8 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
     const [showControls, setShowControls] = useState(false);
     const [hasPlaybackStarted, setHasPlaybackStarted] = useState(false);
     const [showShareMenu, setShowShareMenu] = useState(false);
+    const [showShareModal, setShowShareModal] = useState(false);
+    const [shareModalCopied, setShareModalCopied] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [isScrubbing, setIsScrubbing] = useState(false);
     const progressIntervalRef = useRef<number | null>(null);
@@ -268,6 +267,23 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!showShareModal) {
+      return;
+    }
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setShowShareModal(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [showShareModal]);
 
   const playlistCurrentIndex = playlistQueueIds.findIndex((videoId) => videoId === currentVideo.id);
   const effectivePlaylistIndex =
@@ -397,6 +413,44 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
   const elapsedLabel = formatPlaybackTime(safeCurrentTime);
   const durationLabel = formatPlaybackTime(safeDuration);
   const shareUrl = buildCanonicalShareUrl(currentVideo.id);
+  const hasArtistName = Boolean(currentVideo.channelTitle && currentVideo.channelTitle.trim().length > 0);
+  const socialShareTargets = [
+    {
+      id: "x",
+      label: "Share on X",
+      href: `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(currentVideo.title)}`,
+    },
+    {
+      id: "facebook",
+      label: "Share on Facebook",
+      href: `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(shareUrl)}`,
+    },
+    {
+      id: "reddit",
+      label: "Share on Reddit",
+      href: `https://www.reddit.com/submit?url=${encodeURIComponent(shareUrl)}&title=${encodeURIComponent(currentVideo.title)}`,
+    },
+    {
+      id: "linkedin",
+      label: "Share on LinkedIn",
+      href: `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(shareUrl)}`,
+    },
+    {
+      id: "whatsapp",
+      label: "Share on WhatsApp",
+      href: `https://api.whatsapp.com/send?text=${encodeURIComponent(`${currentVideo.title} ${shareUrl}`)}`,
+    },
+    {
+      id: "telegram",
+      label: "Share on Telegram",
+      href: `https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(currentVideo.title)}`,
+    },
+    {
+      id: "email",
+      label: "Share by Email",
+      href: `mailto:?subject=${encodeURIComponent(currentVideo.title)}&body=${encodeURIComponent(`Check this out: ${shareUrl}`)}`,
+    },
+  ] as const;
   const shouldAutoplaySelection = Boolean(requestedVideoId && requestedVideoId === currentVideo.id);
   const endedChoiceVideos = (() => {
     const maxEndedChoiceVideos = 12;
@@ -447,11 +501,13 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       return;
     }
 
+    const playlistId = activePlaylistId;
+
     let cancelled = false;
 
     async function loadPlaylistSequence() {
       try {
-        const response = await fetch(`/api/playlists/${encodeURIComponent(activePlaylistId!)}`, {
+        const response = await fetch(`/api/playlists/${encodeURIComponent(playlistId)}`, {
           cache: "no-store",
         });
 
@@ -1177,21 +1233,22 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
       }
 
       async function handleShareToSocials() {
-        if (navigator.share) {
-          try {
-            await navigator.share({ title: currentVideo.title, url: shareUrl });
-          } catch {
-            // dismissed
-          }
-        } else {
-          window.open(
-            `https://twitter.com/intent/tweet?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(currentVideo.title)}`,
-            "_blank",
-            "noopener,noreferrer",
-          );
-        }
-
+        setShareModalCopied(false);
+        setShowShareModal(true);
         setShowShareMenu(false);
+      }
+
+      function handleShareTargetOpen(targetUrl: string) {
+        window.open(targetUrl, "_blank", "noopener,noreferrer");
+      }
+
+      async function handleCopyShareUrlForModal() {
+        await handleCopyShareLink();
+        setShareModalCopied(true);
+
+        window.setTimeout(() => {
+          setShareModalCopied(false);
+        }, 1600);
       }
 
       function handlePlayPause() {
@@ -1440,10 +1497,72 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
                     />
                     <span className="playerEndedChoiceMeta">
                       <span className="playerEndedChoiceTitle">{video.title}</span>
-                      <span className="playerEndedChoiceChannel">{video.channelTitle}</span>
+                      <span className="playerEndedChoiceChannel">
+                        <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                          {video.channelTitle}
+                        </ArtistWikiLink>
+                      </span>
                     </span>
                   </button>
                 ))}
+              </div>
+            </div>
+          ) : null}
+
+          {showShareModal ? (
+            <div
+              className="shareModalBackdrop"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Share this video"
+              onClick={() => setShowShareModal(false)}
+            >
+              <div className="shareModal" onClick={(event) => event.stopPropagation()}>
+                <div className="shareModalHeader">
+                  <strong>Share This Video</strong>
+                  <button
+                    type="button"
+                    className="overlayIconBtn"
+                    onClick={() => setShowShareModal(false)}
+                    aria-label="Close share modal"
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <line x1="18" y1="6" x2="6" y2="18" />
+                      <line x1="6" y1="6" x2="18" y2="18" />
+                    </svg>
+                  </button>
+                </div>
+
+                <p className="shareModalSubtitle">Choose a platform, or copy the URL to share anywhere.</p>
+
+                <div className="shareModalGrid">
+                  {socialShareTargets.map((target) => (
+                    <button
+                      key={target.id}
+                      type="button"
+                      className="shareModalTarget"
+                      onClick={() => handleShareTargetOpen(target.href)}
+                    >
+                      {target.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="shareModalUrlRow">
+                  <label htmlFor="share-modal-url" className="shareUrlLabel">Share URL</label>
+                  <input
+                    id="share-modal-url"
+                    type="text"
+                    className="shareUrlInput"
+                    readOnly
+                    value={shareUrl}
+                    onFocus={(event) => event.currentTarget.select()}
+                    onClick={(event) => event.currentTarget.select()}
+                  />
+                  <button type="button" onClick={handleCopyShareUrlForModal}>
+                    {shareModalCopied ? "Copied!" : "Copy Link"}
+                  </button>
+                </div>
               </div>
             </div>
           ) : null}
@@ -1503,6 +1622,18 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
             >
               <span className="primaryNavGlyph" aria-hidden="true">⇥</span>
             </button>
+            {hasArtistName ? (
+              <ArtistWikiLink
+                artistName={currentVideo.channelTitle}
+                videoId={currentVideo.id}
+                asButton
+                className="primaryActionToggleButton"
+                title={`Open ${currentVideo.channelTitle} wiki`}
+              >
+                <span className="primaryActionGlyph" aria-hidden="true">📖</span>
+                <span>Artist Wiki</span>
+              </ArtistWikiLink>
+            ) : null}
             <button
               type="button"
               className={autoplayEnabled ? "primaryActionToggleButton primaryActionToggleButtonActive" : "primaryActionToggleButton"}

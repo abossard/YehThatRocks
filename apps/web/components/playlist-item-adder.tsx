@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import type { VideoRecord } from "@/lib/catalog";
 
 type PlaylistItemAdderProps = {
@@ -45,7 +46,11 @@ export function PlaylistItemAdder({ playlistId, videos, isAuthenticated }: Playl
           <div key={video.id} className="trackCard actionCard compactCard">
             <div>
               <h3>{video.title}</h3>
-              <p>{video.channelTitle}</p>
+              <p>
+                <ArtistWikiLink artistName={video.channelTitle} videoId={video.id} className="artistInlineLink">
+                  {video.channelTitle}
+                </ArtistWikiLink>
+              </p>
             </div>
             <button type="button" onClick={() => addVideo(video.id)} disabled={isPending || !isAuthenticated}>
               {isAuthenticated ? "Add" : "Login"}

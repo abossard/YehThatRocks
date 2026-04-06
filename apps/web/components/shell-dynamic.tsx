@@ -7,6 +7,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { CSSProperties } from "react";
 
 import { AuthLoginForm } from "@/components/auth-login-form";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 import { ArtistsLetterNav } from "@/components/artists-letter-nav";
 import { PlayerExperience } from "@/components/player-experience";
 import { navItems, type VideoRecord } from "@/lib/catalog";
@@ -126,23 +127,30 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
 
     async function loadPreview() {
       try {
-        const response = await fetch(`/api/current-video?v=${encodeURIComponent(videoId)}`);
+        const response = await fetch(`/api/videos/share-preview?v=${encodeURIComponent(videoId)}`);
         if (!response.ok) {
           return;
         }
 
-        const payload = (await response.json()) as CurrentVideoResolvePayload;
-        if (isCancelled || !("currentVideo" in payload) || !payload.currentVideo?.id) {
+        const payload = (await response.json()) as {
+          video?: {
+            id: string;
+            title: string;
+            channelTitle: string;
+          };
+        };
+
+        if (isCancelled || !payload.video?.id) {
           return;
         }
 
         setPreview({
-          id: payload.currentVideo.id,
-          title: payload.currentVideo.title,
-          channelTitle: payload.currentVideo.channelTitle,
+          id: payload.video.id,
+          title: payload.video.title,
+          channelTitle: payload.video.channelTitle,
         });
       } catch {
-        // Keep fallback card if fetch fails.
+        // Keep generic card if preview fetch fails.
       }
     }
 
@@ -171,7 +179,13 @@ function SharedVideoMessageCard({ videoId }: { videoId: string }) {
       />
       <span className="chatSharedVideoMeta">
         <strong>{preview?.title ?? "Shared video"}</strong>
-        <span>{preview?.channelTitle ?? "Tap to open"}</span>
+        <span>
+          {preview?.channelTitle ? (
+            <ArtistWikiLink artistName={preview.channelTitle} videoId={resolvedId} className="artistInlineLink">
+              {preview.channelTitle}
+            </ArtistWikiLink>
+          ) : "Tap to open"}
+        </span>
       </span>
     </Link>
   );
@@ -350,6 +364,7 @@ function ShellDynamicInner({
     const filteredQuery = filteredParams.toString();
     return filteredQuery ? `${pathname}?${filteredQuery}` : pathname;
   })();
+  const routeLoadingLabel = pathname.endsWith("/wiki") ? "Loading wiki" : "Loading video";
 
   useEffect(() => {
     if (!isAuthenticated && rightRailMode === "playlist") {
@@ -1954,7 +1969,7 @@ function ShellDynamicInner({
                 ) : (
                   chatMessages.map((message) => {
                     const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
-                    const sharedVideoId = parseSharedVideoMessage(message.content);
+                    const sharedVideo = parseSharedVideoMessage(message.content);
                     return (
                       <article
                         key={message.id}
@@ -1972,9 +1987,9 @@ function ShellDynamicInner({
                             {isUserOnline ? <span className="chatOnlineBadge" title="Online now">● Online</span> : null}
                             <span>{formatChatTimestamp(message.createdAt)}</span>
                           </div>
-                          {sharedVideoId ? (
+                          {sharedVideo ? (
                             <>
-                              <SharedVideoMessageCard videoId={sharedVideoId} />
+                              <SharedVideoMessageCard videoId={sharedVideo.videoId} />
                             </>
                           ) : (
                             <p>{message.content}</p>
@@ -2046,7 +2061,7 @@ function ShellDynamicInner({
 
             <Suspense fallback={<div className="playerLoadingFallback" />}>
               {isResolvingInitialVideo || isResolvingRequestedVideo ? (
-                <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label="Selecting startup video">
+                <div className="playerLoadingFallback" role="status" aria-live="polite" aria-label={routeLoadingLabel}>
                   <div className="playerBootLoader">
                     <div className="playerBootBars" aria-hidden="true">
                       <span />
@@ -2054,7 +2069,7 @@ function ShellDynamicInner({
                       <span />
                       <span />
                     </div>
-                    <p>Loading video...</p>
+                    <p>{routeLoadingLabel}...</p>
                   </div>
                 </div>
               ) : (
@@ -2164,7 +2179,11 @@ function ShellDynamicInner({
                     </div>
                     <div>
                       <h3>{track.title}</h3>
-                      <p>{track.channelTitle}</p>
+                      <p>
+                        <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                          {track.channelTitle}
+                        </ArtistWikiLink>
+                      </p>
                     </div>
                   </Link>
                   {isAuthenticated ? (
@@ -2286,7 +2305,11 @@ function ShellDynamicInner({
                       </div>
                       <div>
                         <h3>{track.title}</h3>
-                        <p>{track.channelTitle}</p>
+                        <p>
+                          <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+                            {track.channelTitle}
+                          </ArtistWikiLink>
+                        </p>
                       </div>
                     </Link>
                   );

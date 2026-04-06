@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useRef } from "react";
 
 import { AddToPlaylistButton } from "@/components/add-to-playlist-button";
+import { ArtistWikiLink } from "@/components/artist-wiki-link";
 
 type Top100VideoLinkProps = {
   track: {
@@ -81,7 +82,10 @@ export function Top100VideoLink({ track, index, isAuthenticated = true }: Top100
         <div className="leaderboardMeta">
           <h3>{track.title}</h3>
           <p>
-            {track.channelTitle} · {track.favourited.toLocaleString()} favourites
+            <ArtistWikiLink artistName={track.channelTitle} videoId={track.id} className="artistInlineLink">
+              {track.channelTitle}
+            </ArtistWikiLink>
+            {" "}· {track.favourited.toLocaleString()} favourites
           </p>
         </div>
       </Link>
