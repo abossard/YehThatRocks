@@ -71,6 +71,11 @@ function main() {
   assertContains(playerExperienceSource, "const response = await fetch(\"/api/videos/unavailable\", {", "Player reports unavailable videos to API", failures);
   assertContains(playerExperienceSource, "setPlayerHostMode(\"youtube\");", "Player retries restricted videos with youtube host fallback", failures);
 
+  // Player hover-controls recovery invariants.
+  assertContains(playerExperienceSource, "playerFrameRef.current?.matches(\":hover\")", "Player checks real hover state via :hover pseudo-class after pathname change", failures);
+  assertContains(playerExperienceSource, "window.setTimeout(() => {", "Player defers hover state check to allow synthetic mouseleave events to fire first", failures);
+  assertContains(playerExperienceSource, "return () => window.clearTimeout(id);", "Player cleans up hover-check timeout on effect teardown", failures);
+
   // Denied deep-link loop guard invariants.
   assertContains(shellDynamicSource, "const deniedRequestedVideoIdRef = useRef<string | null>(null);", "Shell tracks denied requested video ids", failures);
   assertContains(shellDynamicSource, "if (deniedRequestedVideoIdRef.current === requestedVideoId) {", "Shell skips repeated denied requested video resolution", failures);

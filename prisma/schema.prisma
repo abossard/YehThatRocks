@@ -92,6 +92,8 @@ model User {
   screenName              String?                  @map("screen_name") @db.VarChar(255)
   passwordHash            String?                  @map("password_hash") @db.VarChar(255)
   avatarUrl               String?                  @map("avatar_url") @db.VarChar(500)
+  bio                     String?                  @db.Text
+  location                String?                  @db.VarChar(255)
   playlists               PlaylistName[]
   messages                Message[]
   aiTracks                AiTrack[]

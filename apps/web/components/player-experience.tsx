@@ -587,9 +587,15 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
 
   useEffect(() => {
     // When an overlay page closes, the pointer may already be over the player.
-    // Show controls immediately so users don't need to move the mouse to retrigger hover.
+    // Defer until after synthetic mouseleave events from removed DOM nodes have fired,
+    // then check real hover state so we only show controls if the mouse is actually there.
     if (pathname === "/") {
-      setShowControls(true);
+      const id = window.setTimeout(() => {
+        if (playerFrameRef.current?.matches(":hover")) {
+          setShowControls(true);
+        }
+      }, 0);
+      return () => window.clearTimeout(id);
     }
   }, [pathname]);
 

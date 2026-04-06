@@ -469,6 +469,11 @@ h1 {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.leftRail.panel.translucent .chatMessageClickable:hover,
+.rightRail.panel.translucent .chatMessageClickable:hover {
+  background-color: rgba(220, 22, 5, 0.25) !important;
+}
+
 .railTabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -552,6 +557,15 @@ h1 {
   background: rgba(255, 255, 255, 0.04);
 }
 
+.chatMessageClickable {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.chatMessageClickable:hover {
+  background: rgba(220, 22, 5, 0.25) !important;
+}
+
 .chatMessage > div {
   min-width: 0;
 }
@@ -567,11 +581,28 @@ h1 {
   font-size: 1.2rem;
 }
 
+.chatAvatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  border: 1px solid rgba(220, 22, 5, 0.35);
+}
+
 .messageMeta {
   display: flex;
   justify-content: space-between;
   gap: 8px;
   margin-bottom: 6px;
+}
+
+.chatOnlineBadge {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: rgba(100, 200, 100, 0.8);
+  white-space: nowrap;
+  margin-left: 4px;
 }
 
 .chatMessage p {
@@ -881,10 +912,67 @@ h1 {
   backdrop-filter: blur(8px);
 }
 
+.userProfileBar {
+  align-items: flex-start;
+}
+
+.userProfileHeaderWrap {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex: 1;
+  min-width: 0;
+}
+
+.userProfileHeaderAvatar,
+.userProfileHeaderAvatarFallback {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  flex-shrink: 0;
+  border: 2px solid rgba(220, 22, 5, 0.5);
+  box-shadow: 0 0 8px rgba(220, 22, 5, 0.2);
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  object-fit: cover;
+}
+
 .favouritesBlindBar strong {
   font-family: var(--font-display), cursive;
   font-size: clamp(1.35rem, 1.8vw, 1.75rem);
   line-height: 1;
+}
+
+.userProfileHeaderContent {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding-top: 4px;
+}
+
+.userProfileHeaderContent strong {
+  font-size: clamp(1.2rem, 1.6vw, 1.5rem);
+}
+
+.userProfileHeaderBio {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 220, 212, 0.6);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userProfileHeaderLocation {
+  margin: 0;
+  font-size: 0.75rem;
+  color: rgba(255, 220, 212, 0.45);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .favouritesBlindInner > :not(.favouritesBlindBar) {
@@ -903,6 +991,23 @@ h1 {
   color: var(--text);
   text-decoration: none;
   box-shadow: var(--glow);
+}
+
+.accountTopBarActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.accountTopBarAction:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.accountTabs {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0;
+  margin-bottom: 16px;
 }
 
 .favouritesBlindClose:hover {
@@ -2818,6 +2923,17 @@ h1 {
   color: var(--text);
 }
 
+.authForm textarea {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  resize: vertical;
+  min-height: 120px;
+}
+
 .authForm button {
   padding: 14px 18px;
   border-radius: 8px;
@@ -2829,6 +2945,186 @@ h1 {
 .authMessage {
   margin: 4px 0 0;
   color: #ffd7cf;
+}
+
+.accountDetailsForm {
+  max-width: 680px;
+  padding: 0;
+  gap: 12px;
+}
+
+.accountDetailsLayout {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 18px;
+  align-items: start;
+}
+
+.accountDetailsFields {
+  display: grid;
+  gap: 8px;
+}
+
+.accountDetailsFields label {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.accountDetailsFields label > span,
+.accountBioField > span,
+.accountPasswordForm label > span {
+  text-align: right;
+}
+
+.accountBioField,
+.accountDetailsForm .accountBioField {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  align-items: start;
+  gap: 12px;
+}
+
+.accountPasswordForm {
+  padding: 0;
+  gap: 10px;
+  max-width: none;
+}
+
+.accountPasswordForm label {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+
+.accountDetailsForm > button,
+.accountPasswordForm > button {
+  margin-left: calc(140px + 12px);
+}
+
+.accountDetailsForm button,
+.accountPasswordForm button {
+  width: auto;
+  justify-self: start;
+  padding: 10px 20px;
+}
+
+.accountVerificationRow {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 12px;
+  align-items: start;
+}
+
+.accountVerificationLabel {
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding-top: 4px;
+  text-align: right;
+}
+
+.accountVerificationActions {
+  display: grid;
+  gap: 8px;
+  align-items: start;
+}
+
+.accountVerificationHint {
+  margin: 0;
+  font-size: 0.88rem;
+  color: rgba(255, 220, 212, 0.75);
+}
+
+.accountVerificationActions button {
+  justify-self: start;
+  padding: 10px 20px;
+  border-radius: 8px;
+  background: linear-gradient(180deg, #aa1e11, #5a0906);
+  color: var(--text);
+  box-shadow: var(--glow);
+}
+
+.accountActionsWrap {
+  display: grid;
+  gap: 12px;
+}
+
+.accountSecurityLayout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  align-items: start;
+}
+
+.accountSecurityColumn {
+  display: grid;
+  gap: 12px;
+  padding: 0 32px 0 0;
+}
+
+.accountSecurityColumn + .accountSecurityColumn {
+  padding: 0 0 0 32px;
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.accountSecurityHeading {
+  margin: 0 0 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 220, 212, 0.45);
+}
+
+.accountAvatarPreviewWrap {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+}
+
+.accountAvatarPreviewImage,
+.accountAvatarPreviewFallback {
+  width: 108px;
+  height: 108px;
+  border-radius: 999px;
+  border: 2px solid rgba(220, 22, 5, 0.6);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 0 12px rgba(220, 22, 5, 0.3);
+}
+
+.accountAvatarPreviewImage {
+  object-fit: cover;
+  display: block;
+}
+
+.accountAvatarPreviewFallback {
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+}
+
+.accountAvatarPreviewWrap p {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 220, 212, 0.88);
+}
+
+@media (max-width: 720px) {
+  .accountDetailsLayout,
+  .accountSecurityLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .accountTopBarActions {
+    gap: 8px;
+  }
+
+  .accountTopBarActions .favouritesBlindClose {
+    padding: 9px 11px;
+    font-size: 0.9rem;
+  }
 }
 
 .checkboxRow {
@@ -2848,6 +3144,200 @@ h1 {
 .promptPreview {
   color: #ffdfd6;
 }
+
+/* ── User public profile ─────────────────────────────────── */
+
+.userProfilePage {
+  display: grid;
+  gap: 0;
+  padding-top: 8px;
+}
+
+.userProfileTabs {
+  grid-template-columns: repeat(2, 1fr);
+  padding: 0 0 0 0;
+  margin-bottom: 20px;
+}
+
+.userProfileMeta {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 18px;
+  align-items: center;
+  padding-bottom: 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.userProfileAvatarWrap {
+  flex-shrink: 0;
+}
+
+.userProfileAvatar,
+.userProfileAvatarFallback {
+  width: 80px;
+  height: 80px;
+  border-radius: 999px;
+  object-fit: cover;
+  display: block;
+  border: 2px solid rgba(220, 22, 5, 0.55);
+  box-shadow: 0 0 12px rgba(220, 22, 5, 0.25);
+}
+
+.userProfileAvatarFallback {
+  background: rgba(255, 255, 255, 0.06);
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+}
+
+.userProfileInfo {
+  display: grid;
+  gap: 4px;
+}
+
+.userProfileScreenName {
+  margin: 0;
+  font-family: var(--font-display), cursive;
+  font-size: clamp(1.2rem, 2vw, 1.6rem);
+  line-height: 1.1;
+}
+
+.userProfileBio {
+  margin: 0;
+  font-size: 0.92rem;
+  color: rgba(255, 220, 212, 0.8);
+  line-height: 1.5;
+  max-width: 480px;
+}
+
+.userProfileLocation {
+  margin: 0;
+  font-size: 0.82rem;
+  color: rgba(255, 220, 212, 0.5);
+}
+
+.userProfileSection {
+  display: grid;
+  gap: 14px;
+}
+
+.userProfileSectionHeading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: rgba(255, 220, 212, 0.45);
+}
+
+.userProfileVideoGrid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 320px));
+}
+
+.userProfileEmptyState {
+  margin: 0;
+  font-size: 0.9rem;
+  color: rgba(255, 220, 212, 0.4);
+}
+
+.userProfilePlaylistGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.userProfilePlaylistCard {
+  display: grid;
+  gap: 8px;
+  color: inherit;
+  border-radius: 10px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 0;
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.userProfilePlaylistCard:hover {
+  border-color: rgba(220, 22, 5, 0.5);
+  background: rgba(220, 22, 5, 0.06);
+}
+
+.userProfilePlaylistCard:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.userProfilePlaylistThumbWrap {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.userProfilePlaylistThumb {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.userProfilePlaylistThumbFallback {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 2rem;
+  color: rgba(255, 220, 212, 0.3);
+}
+
+.userProfilePlaylistInfo {
+  display: grid;
+  gap: 2px;
+  padding: 4px 10px 10px;
+}
+
+.userProfilePlaylistName {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userProfilePlaylistCount {
+  font-size: 0.78rem;
+  color: rgba(255, 220, 212, 0.5);
+}
+
+.userProfilePlaylistHeader {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.userProfilePlaylistBackButton {
+  justify-self: start;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 220, 212, 0.8);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.userProfilePlaylistBackButton:hover {
+  border-color: rgba(220, 22, 5, 0.5);
+  background: rgba(220, 22, 5, 0.08);
+}
+
+/* ── End user public profile ─────────────────────────────── */
 
 .inlineStatus {
   margin-top: 0;

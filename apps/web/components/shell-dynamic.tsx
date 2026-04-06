@@ -56,6 +56,7 @@ type OnlineUser = {
   name: string;
   avatarUrl: string | null;
   lastSeen: string | null;
+  isOnline?: boolean;
 };
 
 type CurrentVideoResolvePayload = {
@@ -1678,11 +1679,20 @@ function ShellDynamicInner({
                     <p className="chatStatus">No users currently online.</p>
                   ) : (
                     onlineUsers.map((user) => (
-                      <article key={user.id} className="chatMessage">
-                        <div className="avatar">{user.name.slice(0, 1)}</div>
+                      <article
+                        key={user.id}
+                        className="chatMessage chatMessageClickable"
+                        onClick={() => router.push(`/u/${encodeURIComponent(user.name)}`)}
+                      >
+                        {user.avatarUrl ? (
+                          <Image src={user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" />
+                        ) : (
+                          <div className="avatar">{user.name.slice(0, 1)}</div>
+                        )}
                         <div>
                           <div className="messageMeta">
                             <strong>{user.name}</strong>
+                            <span className="chatOnlineBadge" title="Online now">● Online</span>
                             <span>{user.lastSeen ? formatChatTimestamp(user.lastSeen) : "Now"}</span>
                           </div>
                           <p>Online now</p>
@@ -1691,18 +1701,30 @@ function ShellDynamicInner({
                     ))
                   )
                 ) : (
-                  chatMessages.map((message) => (
-                    <article key={message.id} className="chatMessage">
-                      <div className="avatar">{message.user.name.slice(0, 1)}</div>
-                      <div>
-                        <div className="messageMeta">
-                          <strong>{message.user.name}</strong>
-                          <span>{formatChatTimestamp(message.createdAt)}</span>
+                  chatMessages.map((message) => {
+                    const isUserOnline = onlineUsers.some((u) => u.name === message.user.name);
+                    return (
+                      <article
+                        key={message.id}
+                        className="chatMessage chatMessageClickable"
+                        onClick={() => router.push(`/u/${encodeURIComponent(message.user.name)}`)}
+                      >
+                        {message.user.avatarUrl ? (
+                          <Image src={message.user.avatarUrl} alt="" width={88} height={88} className="chatAvatar" />
+                        ) : (
+                          <div className="avatar">{message.user.name.slice(0, 1)}</div>
+                        )}
+                        <div>
+                          <div className="messageMeta">
+                            <strong>{message.user.name}</strong>
+                            {isUserOnline ? <span className="chatOnlineBadge" title="Online now">● Online</span> : null}
+                            <span>{formatChatTimestamp(message.createdAt)}</span>
+                          </div>
+                          <p>{message.content}</p>
                         </div>
-                        <p>{message.content}</p>
-                      </div>
-                    </article>
-                  ))
+                      </article>
+                    );
+                  })
                 )}
               </div>
 

@@ -4235,6 +4235,80 @@ export async function deletePlaylist(playlistId: string, userId?: number) {
   return false;
 }
 
+export type PublicUserProfile = {
+  id: number;
+  screenName: string;
+  avatarUrl: string | null;
+  bio: string | null;
+  location: string | null;
+};
+
+export async function getPublicUserProfile(screenName: string): Promise<{
+  user: PublicUserProfile | null;
+  favourites: VideoRecord[];
+  playlists: PlaylistSummary[];
+}> {
+  const empty = { user: null, favourites: [], playlists: [] };
+
+  if (!screenName.trim() || !hasDatabaseUrl()) {
+    return empty;
+  }
+
+  let user: PublicUserProfile | null = null;
+
+  try {
+    const rows = await prisma.$queryRaw<
+      Array<{
+        id: number;
+        screenName: string | null;
+        avatarUrl: string | null;
+        bio: string | null;
+        location: string | null;
+      }>
+    >`
+      SELECT id, screen_name AS screenName, avatar_url AS avatarUrl, bio, location
+      FROM users
+      WHERE screen_name = ${screenName}
+      LIMIT 1
+    `;
+
+    const row = rows[0];
+    if (!row || !row.screenName) {
+      return empty;
+    }
+
+    user = {
+      id: Number(row.id),
+      screenName: row.screenName,
+      avatarUrl: row.avatarUrl ?? null,
+      bio: row.bio ?? null,
+      location: row.location ?? null,
+    };
+  } catch {
+    return empty;
+  }
+
+  const [favourites, playlists] = await Promise.all([
+    getFavouriteVideos(user.id),
+    getPlaylists(user.id),
+  ]);
+
+  return { user, favourites, playlists };
+}
+
+export async function getPublicPlaylistVideos(userId: number, playlistId: string): Promise<VideoRecord[]> {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  try {
+    const playlist = await getPlaylistById(playlistId, userId);
+    return playlist?.videos ?? [];
+  } catch {
+    return [];
+  }
+}
+
 export async function submitAiVote(trackId: string, vote: 1 | -1) {
   const previewStore = getPreviewStore();
   let updatedTrack: AiTrackDetail | null = null;

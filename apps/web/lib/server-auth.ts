@@ -8,13 +8,15 @@ type PrismaWithVerifiedUser = typeof prisma & {
   user: {
     findUnique: (args: {
       where: { id: number };
-      select: { id: true; email: true; emailVerifiedAt: true; screenName: true; avatarUrl: true };
+      select: { id: true; email: true; emailVerifiedAt: true; screenName: true; avatarUrl: true; bio: true; location: true };
     }) => Promise<{
       id: number;
       email: string | null;
       emailVerifiedAt: Date | null;
       screenName: string | null;
       avatarUrl: string | null;
+      bio: string | null;
+      location: string | null;
     } | null>;
   };
 };
@@ -37,6 +39,8 @@ export async function getCurrentAuthenticatedUser() {
         emailVerifiedAt: true,
         screenName: true,
         avatarUrl: true,
+        bio: true,
+        location: true,
       },
     });
   } catch {

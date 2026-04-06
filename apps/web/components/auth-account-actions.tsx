@@ -5,9 +5,10 @@ import { useState, useTransition } from "react";
 
 type AuthAccountActionsProps = {
   emailVerified: boolean;
+  showLogout?: boolean;
 };
 
-export function AuthAccountActions({ emailVerified }: AuthAccountActionsProps) {
+export function AuthAccountActions({ emailVerified, showLogout = true }: AuthAccountActionsProps) {
   const router = useRouter();
   const [message, setMessage] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -43,17 +44,26 @@ export function AuthAccountActions({ emailVerified }: AuthAccountActionsProps) {
 
   return (
     <div className="interactiveStack">
-      <div className="primaryActions compactActions">
-        {!emailVerified ? (
-          <button type="button" onClick={handleSendVerification} disabled={isPending}>
-            {isPending ? "Sending..." : "Send verification email"}
+      {!emailVerified ? (
+        <div className="accountVerificationRow">
+          <span className="accountVerificationLabel">Email not verified</span>
+          <div className="accountVerificationActions">
+            <p className="accountVerificationHint">Verify your email address to unlock all account features.</p>
+            <button type="button" onClick={handleSendVerification} disabled={isPending}>
+              {isPending ? "Sending..." : "Send verification email"}
+            </button>
+            {message ? <p className="authMessage">{message}</p> : null}
+          </div>
+        </div>
+      ) : null}
+      {showLogout ? (
+        <div className="primaryActions compactActions">
+          <button type="button" onClick={handleLogout} disabled={isPending}>
+            {isPending ? "Signing out..." : "Logout"}
           </button>
-        ) : null}
-        <button type="button" onClick={handleLogout} disabled={isPending}>
-          {isPending ? "Signing out..." : "Logout"}
-        </button>
-      </div>
-      {message ? <p className="authMessage">{message}</p> : null}
+          {message ? <p className="authMessage">{message}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

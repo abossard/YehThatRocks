@@ -6,12 +6,16 @@ const path = require("node:path");
 const ROOT = process.cwd();
 
 const files = {
+  accountPage: path.join(ROOT, "apps/web/app/(shell)/account/page.tsx"),
+  accountPanel: path.join(ROOT, "apps/web/components/account-settings-panel.tsx"),
+  logoutButton: path.join(ROOT, "apps/web/components/auth-logout-button.tsx"),
   loginForm: path.join(ROOT, "apps/web/components/auth-login-form.tsx"),
   changePasswordForm: path.join(ROOT, "apps/web/components/auth-change-password-form.tsx"),
   forgotPasswordForm: path.join(ROOT, "apps/web/components/auth-forgot-password-form.tsx"),
   accountActions: path.join(ROOT, "apps/web/components/auth-account-actions.tsx"),
   loginRoute: path.join(ROOT, "apps/web/app/api/auth/login/route.ts"),
   logoutRoute: path.join(ROOT, "apps/web/app/api/auth/logout/route.ts"),
+  profileRoute: path.join(ROOT, "apps/web/app/api/auth/profile/route.ts"),
   changePasswordRoute: path.join(ROOT, "apps/web/app/api/auth/change-password/route.ts"),
   forgotPasswordRoute: path.join(ROOT, "apps/web/app/api/auth/forgot-password/route.ts"),
   sendVerificationRoute: path.join(ROOT, "apps/web/app/api/auth/send-verification/route.ts"),
@@ -34,11 +38,37 @@ function assertContains(source, needle, description, failures) {
 function main() {
   const failures = [];
 
+  const accountPageSource = read(files.accountPage);
+  const accountPanelSource = read(files.accountPanel);
+  const logoutButtonSource = read(files.logoutButton);
   const loginFormSource = read(files.loginForm);
   const changePasswordFormSource = read(files.changePasswordForm);
   const forgotPasswordFormSource = read(files.forgotPasswordForm);
   const accountActionsSource = read(files.accountActions);
+  const profileRouteSource = read(files.profileRoute);
   const globalCssSource = read(files.globalCss);
+
+  // --- Account page tabs and top-bar actions ---
+  assertContains(accountPageSource, "<AuthLogoutButton />", "Account page renders logout action in the top bar", failures);
+  assertContains(accountPageSource, "className=\"accountTopBarActions\"", "Account page groups top-right actions", failures);
+  assertContains(accountPageSource, "<AccountSettingsPanel", "Account page renders tabbed account settings panel", failures);
+  assertContains(accountPanelSource, "User details", "Account panel has User details tab", failures);
+  assertContains(accountPanelSource, "Security", "Account panel has Security tab", failures);
+  assertContains(accountPanelSource, "name=\"avatarUrl\"", "Account panel includes avatar URL field", failures);
+  assertContains(accountPanelSource, "name=\"bio\"", "Account panel includes bio field", failures);
+  assertContains(accountPanelSource, "name=\"location\"", "Account panel includes location field", failures);
+  assertContains(accountPanelSource, '"/api/auth/profile"', "Account panel saves profile details via /api/auth/profile", failures);
+  assertContains(accountPanelSource, "showLogout={false}", "Security tab hides duplicate logout button", failures);
+  assertContains(logoutButtonSource, '"/api/auth/logout"', "Top-bar logout button posts to /api/auth/logout", failures);
+
+  // --- Profile API route ---
+  assertContains(profileRouteSource, "export async function PATCH", "Profile API supports PATCH updates", failures);
+  assertContains(profileRouteSource, "verifySameOrigin(request)", "Profile API enforces same-origin CSRF protection", failures);
+  assertContains(profileRouteSource, "screenName", "Profile API validates screenName", failures);
+  assertContains(profileRouteSource, "avatarUrl", "Profile API validates avatarUrl", failures);
+  assertContains(profileRouteSource, "bio", "Profile API handles bio", failures);
+  assertContains(profileRouteSource, "location", "Profile API handles location", failures);
+  assertContains(profileRouteSource, "(prisma as PrismaWithProfileUser).user.update({", "Profile API persists profile fields through Prisma update", failures);
 
   // --- Login form ---
   assertContains(loginFormSource, 'name="email"', "Login form has email input field", failures);
@@ -93,6 +123,9 @@ function main() {
   assertContains(globalCssSource, ".authForm", "globals.css defines .authForm styles", failures);
   assertContains(globalCssSource, ".authMessage", "globals.css defines .authMessage styles", failures);
   assertContains(globalCssSource, ".interactiveStack", "globals.css defines .interactiveStack layout", failures);
+  assertContains(globalCssSource, ".accountTabs", "globals.css defines account tab styles", failures);
+  assertContains(globalCssSource, ".accountTopBarActions", "globals.css defines account top-bar action group", failures);
+  assertContains(globalCssSource, ".accountAvatarPreviewWrap", "globals.css defines avatar preview styles", failures);
 
   if (failures.length > 0) {
     console.error("Auth invariant check failed.");
