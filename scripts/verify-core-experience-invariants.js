@@ -61,7 +61,7 @@ function main() {
   assertContains(shellDynamicSource, "const [relatedTransitionPhase, setRelatedTransitionPhase] = useState<\"idle\" | \"fading-out\" | \"loading\" | \"fading-in\">(\"idle\");", "Watch Next uses explicit transition phases", failures);
   assertContains(shellDynamicSource, "watchNextRailRef.current.scrollTop = 0;", "Watch Next resets scroll top during transition", failures);
   assertContains(currentVideoRouteSource, "const targetRelatedCount = 10;", "Current-video API targets 10 Watch Next items", failures);
-  assertContains(currentVideoRouteSource, "const topVideos = await getTopVideos(100);", "Current-video API fetches Top 100 filler pool", failures);
+  assertContains(currentVideoRouteSource, "const topVideos = await getTopVideos(30);", "Current-video API fetches bounded filler pool", failures);
   assertContains(currentVideoRouteSource, "const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);", "Current-video API randomizes sparse filler selection", failures);
 
   // Player invariants.

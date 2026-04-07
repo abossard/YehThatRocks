@@ -32,9 +32,10 @@
     "verify:core-experience": "node scripts/verify-core-experience-invariants.js",
     "verify:core-experience:api": "node scripts/verify-core-experience-api-smoke.js",
     "verify:auth": "node scripts/verify-auth-invariants.js",
+    "verify:admin": "node scripts/verify-admin-invariants.js",
     "verify:favourites": "node scripts/verify-favourites-invariants.js",
     "verify:search": "node scripts/verify-search-invariants.js",
-    "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:categories && npm run verify:auth && npm run verify:favourites && npm run verify:search",
+    "verify:ui-regressions": "npm run verify:artists-ui && npm run verify:top100-ui && npm run verify:playlists-ui && npm run verify:core-experience && npm run verify:categories && npm run verify:auth && npm run verify:admin && npm run verify:favourites && npm run verify:search",
     "verify:invariants": "npm run verify:ui-regressions",
     "verify:invariants:api": "npm run verify:core-experience:api && npm run verify:playlists:api && npm run verify:categories:api"
   },

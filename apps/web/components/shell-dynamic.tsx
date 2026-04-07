@@ -310,6 +310,7 @@ function ShellDynamicInner({
     global: null,
     video: null,
   });
+  const chatModeRef = useRef<ChatMode>(chatMode);
 
   // Search autocomplete
   type SearchSuggestion = { type: "artist" | "track" | "genre"; label: string; url: string };
@@ -354,7 +355,7 @@ function ShellDynamicInner({
     const filteredParams = new URLSearchParams();
 
     for (const [key, value] of searchParams.entries()) {
-      if (key === "v" || key === "resume") {
+      if (key === "v" || key === "resume" || (pathname === "/admin" && key === "tab")) {
         continue;
       }
 
@@ -950,6 +951,10 @@ function ShellDynamicInner({
     }, 900);
   }
 
+  useEffect(() => {
+    chatModeRef.current = chatMode;
+  }, [chatMode]);
+
   // Load chat history whenever mode / video / auth changes.
   // For "online" mode we also keep a 30 s refresh so presence stays current.
   useEffect(() => {
@@ -1039,7 +1044,7 @@ function ShellDynamicInner({
           return;
         }
 
-        if (chatMode !== incomingMode) {
+        if (chatModeRef.current !== incomingMode) {
           triggerChatTabFlash(incomingMode);
           return;
         }
@@ -1072,7 +1077,7 @@ function ShellDynamicInner({
       globalEvents.close();
       videoEvents.close();
     };
-  }, [chatMode, currentVideo.id, shouldRunChat]);
+  }, [currentVideo.id, shouldRunChat]);
 
   useEffect(() => {
     return () => {

@@ -146,7 +146,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    const currentVideo = await getCurrentVideo(v);
+    const currentVideo = await getCurrentVideo(v, { skipPlaybackDecision: Boolean(v) });
     if (!currentVideo?.id) {
       logCurrentVideoRoute("request:pending", {
         requestedVideoId: v,
@@ -160,7 +160,7 @@ export async function GET(request: NextRequest) {
     let paddedRelatedVideos = relatedVideos;
 
     if (relatedVideos.length < targetRelatedCount) {
-      const topVideos = await getTopVideos(100);
+      const topVideos = await getTopVideos(30);
       const blockedIds = new Set([currentVideo.id, ...relatedVideos.map((video) => video.id)]);
       const fillerPool = uniqueVideosById(topVideos.filter((video) => !blockedIds.has(video.id)));
       const filler = shuffleVideos(fillerPool).slice(0, targetRelatedCount - relatedVideos.length);

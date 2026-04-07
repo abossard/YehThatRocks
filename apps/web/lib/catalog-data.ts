@@ -1848,7 +1848,7 @@ async function findArtistsInDatabase(options: {
   );
 }
 
-export async function getCurrentVideo(videoId?: string) {
+export async function getCurrentVideo(videoId?: string, options?: { skipPlaybackDecision?: boolean }) {
   const normalizedVideoId = normalizeYouTubeVideoId(videoId);
 
   debugCatalog("getCurrentVideo:start", {
@@ -1862,7 +1862,7 @@ export async function getCurrentVideo(videoId?: string) {
   }
 
   try {
-    if (normalizedVideoId) {
+    if (normalizedVideoId && !options?.skipPlaybackDecision) {
       const decision = await getVideoPlaybackDecision(normalizedVideoId);
       if (!decision.allowed) {
         if (decision.reason === "unavailable") {
@@ -2145,10 +2145,10 @@ export async function getRelatedVideos(videoId: string) {
         )
       GROUP BY v.videoId, v.title, v.favourited, v.description
       ORDER BY v.favourited DESC, MAX(v.views) DESC, v.videoId ASC
-      LIMIT 6
+      LIMIT 10
     `;
 
-    const videos = dedupeRankedRows(mappedVideos).slice(0, 6);
+    const videos = dedupeRankedRows(mappedVideos).slice(0, 10);
     return videos.map(mapVideo);
   } catch {
     return [];

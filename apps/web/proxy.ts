@@ -4,6 +4,8 @@ import { readAuthCookies } from "@/lib/auth-cookies";
 import { verifyToken } from "@/lib/auth-jwt";
 
 const PROTECTED_API_PREFIXES = [
+  "/api/chat",
+  "/api/chat/stream",
   "/api/favourites",
   "/api/playlists",
   "/api/auth/change-password",
@@ -45,8 +47,12 @@ export async function proxy(request: NextRequest) {
     try {
       const access = await verifyToken(accessToken, "access");
       const requestHeaders = new Headers(request.headers);
+      requestHeaders.delete("x-auth-user-id");
+      requestHeaders.delete("x-auth-user-email");
+      requestHeaders.delete("x-auth-verified");
       requestHeaders.set("x-auth-user-id", String(access.uid));
       requestHeaders.set("x-auth-user-email", access.email);
+      requestHeaders.set("x-auth-verified", "1");
 
       return withSecurityHeaders(
         NextResponse.next({

@@ -12,6 +12,24 @@ export async function requireApiAuth(request: NextRequest): Promise<
   | { ok: true; auth: AuthContext }
   | { ok: false; response: NextResponse }
 > {
+  const proxyVerified = request.headers.get("x-auth-verified") === "1";
+  const proxiedUserId = request.headers.get("x-auth-user-id");
+  const proxiedEmail = request.headers.get("x-auth-user-email");
+
+  if (proxyVerified && proxiedUserId && proxiedEmail) {
+    const userId = Number(proxiedUserId);
+
+    if (Number.isInteger(userId) && userId > 0) {
+      return {
+        ok: true,
+        auth: {
+          userId,
+          email: proxiedEmail,
+        },
+      };
+    }
+  }
+
   const { accessToken } = readAuthCookies(request);
 
   if (!accessToken) {

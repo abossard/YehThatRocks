@@ -3,16 +3,21 @@ import Link from "next/link";
 import { CloseLink } from "@/components/close-link";
 import { AccountSettingsPanel } from "@/components/account-settings-panel";
 import { AuthLogoutButton } from "@/components/auth-logout-button";
+import { isAdminIdentity } from "@/lib/admin-auth";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
 export default async function AccountPage() {
   const user = await getCurrentAuthenticatedUser();
+  const isAdminUser = Boolean(user?.email && isAdminIdentity(user.id, user.email));
 
   return (
     <>
       <div className="favouritesBlindBar">
         <strong><span className="whiteAccountGlyph" aria-hidden="true">👤</span> Account</strong>
         <div className="accountTopBarActions">
+          {user && isAdminUser ? (
+            <Link href="/admin" className="favouritesBlindClose">Admin Panel</Link>
+          ) : null}
           {user ? <AuthLogoutButton /> : null}
           <CloseLink />
         </div>
