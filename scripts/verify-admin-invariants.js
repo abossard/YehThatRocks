@@ -41,8 +41,9 @@ function main() {
   const adminArtistsRouteSource = read(files.adminArtistsRoute);
 
   // Admin identity and auth guard invariants.
-  assertContains(adminAuthSource, 'const ADMIN_EMAIL = "simonjamesodell@live.co.uk";', "Admin auth pins the owner email", failures);
-  assertContains(adminAuthSource, "const ENFORCE_ADMIN_USER_ID = process.env.NODE_ENV === \"production\";", "Admin auth enforces user-id lock in production", failures);
+  assertContains(adminAuthSource, 'const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();', "Admin auth pins owner email with env override", failures);
+  assertContains(adminAuthSource, 'const ADMIN_USER_ID = Number(process.env.ADMIN_USER_ID ?? "");', "Admin auth reads optional admin user id from env", failures);
+  assertContains(adminAuthSource, "const ENFORCE_ADMIN_USER_ID = Number.isInteger(ADMIN_USER_ID) && ADMIN_USER_ID > 0;", "Admin auth conditionally enforces user-id lock", failures);
   assertContains(adminAuthSource, "export function isAdminIdentity", "Admin auth exposes shared identity helper", failures);
   assertContains(adminAuthSource, "export async function requireAdminApiAuth", "Admin API routes are guardable with requireAdminApiAuth", failures);
   assertContains(adminAuthSource, 'response: NextResponse.json({ error: "Forbidden" }, { status: 403 })', "Admin API guard returns 403 for non-admin users", failures);

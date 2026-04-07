@@ -3,9 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/auth-request";
 import { getCurrentAuthenticatedUser } from "@/lib/server-auth";
 
-const ADMIN_USER_ID = 1;
-const ADMIN_EMAIL = "simonjamesodell@live.co.uk";
-const ENFORCE_ADMIN_USER_ID = process.env.NODE_ENV === "production";
+const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || "simonjamesodell@live.co.uk").trim().toLowerCase();
+const ADMIN_USER_ID = Number(process.env.ADMIN_USER_ID ?? "");
+const ENFORCE_ADMIN_USER_ID = Number.isInteger(ADMIN_USER_ID) && ADMIN_USER_ID > 0;
 
 export function isAdminIdentity(userId: number, email: string) {
   const normalizedEmail = email.trim().toLowerCase();
