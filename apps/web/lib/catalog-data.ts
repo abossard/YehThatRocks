@@ -186,6 +186,71 @@ function normalizeParsedConfidence(value: unknown) {
   return Math.max(0, Math.min(1, numeric));
 }
 
+function normalizeLooseToken(value: string | null | undefined) {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseSimpleTitleSides(title: string) {
+  const withDash = title.split(" - ").map((part) => part.trim()).filter(Boolean);
+  if (withDash.length >= 2) {
+    return { left: withDash[0], right: withDash[1] };
+  }
+
+  const withPipe = title.split("|").map((part) => part.trim()).filter(Boolean);
+  if (withPipe.length >= 2) {
+    return { left: withPipe[0], right: withPipe[1] };
+  }
+
+  return null;
+}
+
+function isLikelySwappedByTitleOrder(title: string, artist: string | null | undefined, track: string | null | undefined) {
+  if (!artist || !track) {
+    return false;
+  }
+
+  const sides = parseSimpleTitleSides(title);
+  if (!sides) {
+    return false;
+  }
+
+  const left = normalizeLooseToken(sides.left);
+  const right = normalizeLooseToken(sides.right);
+  const artistToken = normalizeLooseToken(artist);
+  const trackToken = normalizeLooseToken(track);
+
+  if (!left || !right || !artistToken || !trackToken) {
+    return false;
+  }
+
+  return left.includes(artistToken) && right.includes(trackToken) && !left.includes(trackToken);
+}
+
+function inferArtistFromTitle(title: string) {
+  const sides = parseSimpleTitleSides(title);
+  if (!sides) {
+    return null;
+  }
+
+  const markerPattern = /\b(official|video|lyrics?|lyric|remaster(?:ed)?|live|hd|4k|audio|visualizer|feat\.?|ft\.?)\b|[\[(]/i;
+  const leftHasMarkers = markerPattern.test(sides.left);
+  const rightHasMarkers = markerPattern.test(sides.right);
+
+  if (leftHasMarkers && !rightHasMarkers) {
+    return sides.right;
+  }
+
+  if (rightHasMarkers && !leftHasMarkers) {
+    return sides.left;
+  }
+
+  return sides.left;
+}
+
 function extractJsonObject(content: unknown) {
   if (typeof content !== "string") {
     throw new Error("Groq returned non-string message content");
@@ -327,6 +392,11 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     `;
 
     const existingMeta = existing[0];
+    const existingLikelySwapped = isLikelySwappedByTitleOrder(
+      video.title,
+      existingMeta?.parsedArtist,
+      existingMeta?.parsedTrack,
+    );
     const existingConfidence = Number(existingMeta?.parseConfidence ?? NaN);
     const hasStrongGroqParse =
       Boolean(existingMeta?.parsedArtist?.trim()) &&
@@ -337,7 +407,20 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       existingMeta?.parseMethod === "groq-llm";
 
     if (hasStrongGroqParse) {
-      if (existingMeta?.parsedArtist?.trim()) {
+      if (existingLikelySwapped && existingMeta?.parsedArtist && existingMeta?.parsedTrack) {
+        await prisma.$executeRaw`
+          UPDATE videos
+          SET
+            parsedArtist = ${existingMeta.parsedTrack},
+            parsedTrack = ${existingMeta.parsedArtist},
+            parseMethod = ${"groq-llm-corrected"},
+            parseReason = ${`Auto-corrected swapped artist/track by title order: ${video.id}`},
+            parsedAt = ${new Date()}
+          WHERE id = ${videoRowId}
+        `;
+
+        await refreshArtistProjectionForName(existingMeta.parsedTrack);
+      } else if (existingMeta?.parsedArtist?.trim()) {
         await refreshArtistProjectionForName(existingMeta.parsedArtist);
       }
       return;
@@ -348,14 +431,21 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       return;
     }
 
+    const shouldSwapParsed = isLikelySwappedByTitleOrder(video.title, parsed.artist, parsed.track);
+    const correctedArtist = shouldSwapParsed ? parsed.track : parsed.artist;
+    const correctedTrack = shouldSwapParsed ? parsed.artist : parsed.track;
+    const correctedReason = shouldSwapParsed
+      ? `${parsed.reason ?? ""}${parsed.reason ? " | " : ""}Auto-corrected swapped artist/track by title order.`
+      : parsed.reason;
+
     await prisma.$executeRaw`
       UPDATE videos
       SET
-        parsedArtist = ${parsed.artist},
-        parsedTrack = ${parsed.track},
+        parsedArtist = ${correctedArtist},
+        parsedTrack = ${correctedTrack},
         parsedVideoType = ${parsed.videoType},
-        parseMethod = ${"groq-llm"},
-        parseReason = ${parsed.reason},
+        parseMethod = ${shouldSwapParsed ? "groq-llm-corrected" : "groq-llm"},
+        parseReason = ${correctedReason},
         parseConfidence = ${parsed.confidence},
         parsedAt = ${new Date()}
       WHERE id = ${videoRowId}
@@ -364,13 +454,14 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
     debugCatalog("maybePersistRuntimeMetadata:updated", {
       videoId: video.id,
       rowId: videoRowId,
-      artist: parsed.artist,
-      track: parsed.track,
+      artist: correctedArtist,
+      track: correctedTrack,
       confidence: parsed.confidence,
+      corrected: shouldSwapParsed,
     });
 
-    if (parsed.artist) {
-      await refreshArtistProjectionForName(parsed.artist);
+    if (correctedArtist) {
+      await refreshArtistProjectionForName(correctedArtist);
     }
   } catch (error) {
     debugCatalog("maybePersistRuntimeMetadata:error", {
@@ -641,9 +732,10 @@ function mapVideo(video: {
       ? Number(video.favourited)
       : Number(video.favourited ?? 0);
 
-  const inferredChannelTitle = video.title.includes(" - ")
-    ? video.title.split(" - ", 1)[0].trim()
-    : video.title.split("|", 1)[0].trim();
+  const inferredChannelTitle = inferArtistFromTitle(video.title)
+    ?? (video.title.includes(" - ")
+      ? video.title.split(" - ", 1)[0].trim()
+      : video.title.split("|", 1)[0].trim());
 
   return {
     id: video.videoId,
@@ -1959,7 +2051,13 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     !Number.isFinite(Number(row.parseConfidence ?? NaN)) ||
     Number(row.parseConfidence ?? NaN) < PLAYBACK_MIN_CONFIDENCE;
 
-  if (needsMetadataBackfill) {
+  const likelySwappedMetadata = isLikelySwappedByTitleOrder(
+    row.title,
+    row.parsedArtist,
+    row.parsedTrack,
+  );
+
+  if (needsMetadataBackfill || likelySwappedMetadata) {
     triggerRuntimeMetadataBackfill(row.id, {
       id: normalizedVideoId,
       title: row.title,
@@ -1969,6 +2067,14 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       description: row.description ?? "Catalog video pending metadata classification.",
       thumbnail: getYouTubeThumbnailUrl(normalizedVideoId),
     });
+
+    if (likelySwappedMetadata) {
+      row = {
+        ...row,
+        parsedArtist: row.parsedTrack,
+        parsedTrack: row.parsedArtist,
+      };
+    }
   }
 
   if (!row.parsedArtist?.trim() || !row.parsedTrack?.trim()) {
