@@ -19,6 +19,11 @@ type CpuSample = {
 };
 
 let previousCpuSample: CpuSample | null = null;
+const METRIC_SAMPLE_MS = Math.max(50, Number(process.env.ADMIN_METRIC_SAMPLE_MS || "200"));
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 async function readLinuxNetworkTotalBytes() {
   if (process.platform !== "linux") {
@@ -67,7 +72,22 @@ async function computeNetworkUsagePercent() {
   previousNetworkSample = current;
 
   if (!prev || now <= prev.ts || totalBytes < prev.totalBytes) {
-    return null;
+    await sleep(METRIC_SAMPLE_MS);
+    const sampledTotalBytes = await readLinuxNetworkTotalBytes();
+    const sampledNow = Date.now();
+
+    if (sampledTotalBytes === null || sampledNow <= now || sampledTotalBytes < totalBytes) {
+      return null;
+    }
+
+    previousNetworkSample = { ts: sampledNow, totalBytes: sampledTotalBytes };
+    const bytesPerSec = (sampledTotalBytes - totalBytes) / ((sampledNow - now) / 1000);
+    const maxBytesPerSec = Number(process.env.ADMIN_NETWORK_DIAL_MAX_BYTES_PER_SEC || "12500000");
+    if (!Number.isFinite(bytesPerSec) || !Number.isFinite(maxBytesPerSec) || maxBytesPerSec <= 0) {
+      return null;
+    }
+
+    return Math.max(0, Math.min(100, (bytesPerSec / maxBytesPerSec) * 100));
   }
 
   const bytesPerSec = (totalBytes - prev.totalBytes) / ((now - prev.ts) / 1000);
@@ -79,7 +99,7 @@ async function computeNetworkUsagePercent() {
   return Math.max(0, Math.min(100, (bytesPerSec / maxBytesPerSec) * 100));
 }
 
-function computeCpuUsagePercent() {
+async function computeCpuUsagePercent() {
   const usage = process.cpuUsage();
   const usageMicros = usage.user + usage.system;
   const now = Date.now();
@@ -88,7 +108,19 @@ function computeCpuUsagePercent() {
   previousCpuSample = current;
 
   if (!prev || now <= prev.ts || usageMicros < prev.usageMicros) {
-    return null;
+    const start = process.cpuUsage();
+    const startTs = Date.now();
+    await sleep(METRIC_SAMPLE_MS);
+    const delta = process.cpuUsage(start);
+    const elapsedMicros = Math.max(1, (Date.now() - startTs) * 1000);
+    const cpuCount = Math.max(1, os.cpus().length);
+    const percent = ((delta.user + delta.system) / elapsedMicros / cpuCount) * 100;
+    if (!Number.isFinite(percent)) {
+      return null;
+    }
+
+    previousCpuSample = { ts: Date.now(), usageMicros: process.cpuUsage().user + process.cpuUsage().system };
+    return Math.max(0, Math.min(100, percent));
   }
 
   const elapsedMicros = (now - prev.ts) * 1000;
@@ -110,7 +142,7 @@ export async function GET(request: NextRequest) {
 
   const startedAt = Date.now();
 
-  const cpuUsagePercent = computeCpuUsagePercent();
+  const cpuUsagePercent = await computeCpuUsagePercent();
   const networkUsagePercent = await computeNetworkUsagePercent();
   const memoryUsagePercent = Math.max(
     0,
