@@ -318,6 +318,48 @@ function inferArtistFromTitle(title: string) {
   return sides.left;
 }
 
+function sanitizeFallbackMetadataToken(value: string | null | undefined, maxLength: number) {
+  if (!value) {
+    return null;
+  }
+
+  const cleaned = value
+    .replace(/\[[^\]]*\]/g, " ")
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(official\s+video|official|lyrics?|lyric\s+video|audio|visualizer|hd|4k|remaster(?:ed)?)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalizeParsedString(cleaned, maxLength);
+}
+
+function deriveAdminImportFallbackMetadata(title: string) {
+  const sides = parseSimpleTitleSides(title);
+
+  if (!sides) {
+    return null;
+  }
+
+  const inferredArtist = inferArtistFromTitle(title);
+  const fallbackArtist = sanitizeFallbackMetadataToken(inferredArtist ?? sides.left, 255);
+  const fallbackTrack = sanitizeFallbackMetadataToken(
+    inferredArtist && inferredArtist.toLowerCase() === sides.left.toLowerCase() ? sides.right : sides.left,
+    255,
+  );
+
+  if (!fallbackArtist || !fallbackTrack) {
+    return null;
+  }
+
+  return {
+    artist: fallbackArtist,
+    track: fallbackTrack,
+    videoType: "official",
+    confidence: Math.max(PLAYBACK_MIN_CONFIDENCE, 0.82),
+    reason: "Admin direct import heuristic fallback from title parsing.",
+  } as const;
+}
+
 function extractJsonObject(content: unknown) {
   if (typeof content !== "string") {
     throw new Error("Groq returned non-string message content");
@@ -1295,7 +1337,42 @@ export async function importVideoFromDirectSource(source: string) {
   }
 
   await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
-  const decision = await getVideoPlaybackDecision(normalizedVideoId);
+  let decision = await getVideoPlaybackDecision(normalizedVideoId);
+
+  if (
+    hasDatabaseUrl()
+    && !decision.allowed
+    && (decision.reason === "missing-metadata" || decision.reason === "unknown-video-type" || decision.reason === "low-confidence")
+  ) {
+    const fallbackRows = await prisma.$queryRaw<Array<{ id: number; title: string }>>`
+      SELECT id, title
+      FROM videos
+      WHERE videoId = ${normalizedVideoId}
+      LIMIT 1
+    `;
+
+    const fallbackRow = fallbackRows[0];
+    const fallbackMeta = fallbackRow ? deriveAdminImportFallbackMetadata(fallbackRow.title) : null;
+
+    if (fallbackRow && fallbackMeta) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET
+          parsedArtist = ${fallbackMeta.artist},
+          parsedTrack = ${fallbackMeta.track},
+          parsedVideoType = ${fallbackMeta.videoType},
+          parseMethod = ${"admin-direct-import-heuristic"},
+          parseReason = ${fallbackMeta.reason},
+          parseConfidence = ${fallbackMeta.confidence},
+          parsedAt = ${new Date()}
+        WHERE id = ${fallbackRow.id}
+      `;
+
+      await refreshArtistProjectionForName(fallbackMeta.artist);
+      playbackDecisionCache.delete(normalizedVideoId);
+      decision = await getVideoPlaybackDecision(normalizedVideoId);
+    }
+  }
 
   return { videoId: normalizedVideoId, decision };
 }
