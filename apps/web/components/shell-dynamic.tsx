@@ -247,6 +247,8 @@ function isProtectedOverlayPath(pathname: string) {
     || pathname.startsWith("/playlists/");
 }
 
+const AUTH_PROBE_FAILURE_THRESHOLD = 2;
+
 function ShellDynamicInner({
   initialVideo,
   isLoggedIn,
@@ -291,6 +293,7 @@ function ShellDynamicInner({
   const [isResolvingInitialVideo, setIsResolvingInitialVideo] = useState(!requestedVideoId);
   const [isResolvingRequestedVideo, setIsResolvingRequestedVideo] = useState(Boolean(requestedVideoId));
   const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+  const authProbeFailureCountRef = useRef(0);
   const lastVideoIdRef = useRef<string | null>(null);
   const deniedRequestedVideoIdRef = useRef<string | null>(null);
   const hasResolvedInitialVideoRef = useRef(Boolean(requestedVideoId));
@@ -375,6 +378,7 @@ function ShellDynamicInner({
 
   useEffect(() => {
     setIsAuthenticated(isLoggedIn);
+    authProbeFailureCountRef.current = 0;
   }, [isLoggedIn]);
 
   useEffect(() => {
@@ -1576,9 +1580,17 @@ function ShellDynamicInner({
         }
 
         if (response.status === 401 || response.status === 403) {
-          setIsAuthenticated(false);
-          setChatError(null);
+          authProbeFailureCountRef.current += 1;
+
+          if (authProbeFailureCountRef.current >= AUTH_PROBE_FAILURE_THRESHOLD) {
+            setIsAuthenticated(false);
+            setChatError(null);
+          }
+
+          return;
         }
+
+        authProbeFailureCountRef.current = 0;
       } catch {
         // Ignore transient network errors and keep current UI state.
       }
