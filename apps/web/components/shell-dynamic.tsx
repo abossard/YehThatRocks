@@ -1755,7 +1755,7 @@ function ShellDynamicInner({
 
       <header className="topbar">
         <div className="brandLockup">
-          <Link href="/" aria-label="Yeh That Rocks home">
+          <a href="/" aria-label="Yeh That Rocks home">
             <Image
               src="/assets/images/yeh4.png"
               alt="Yeh That Rocks"
@@ -1764,7 +1764,7 @@ function ShellDynamicInner({
               priority
               className="brandLogo"
             />
-          </Link>
+          </a>
           <h1 className="brandTagline">The world&apos;s loudest website</h1>
         </div>
 
@@ -1817,6 +1817,13 @@ function ShellDynamicInner({
                     <>
                       <span className="navAccountGlyph" aria-hidden="true">
                         👤
+                      </span>
+                      <span>{item.label}</span>
+                    </>
+                  ) : item.href === "/new" ? (
+                    <>
+                      <span className="navNewGlyph" aria-hidden="true">
+                        ⭐
                       </span>
                       <span>{item.label}</span>
                     </>

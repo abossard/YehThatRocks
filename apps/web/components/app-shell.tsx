@@ -63,7 +63,7 @@ export async function AppShell({
 
       <header className="topbar">
         <div className="brandLockup">
-          <Link href="/" aria-label="Yeh That Rocks home">
+          <a href="/" aria-label="Yeh That Rocks home">
             <Image
               src="/assets/images/yeh4.png"
               alt="Yeh That Rocks"
@@ -72,7 +72,7 @@ export async function AppShell({
               priority
               className="brandLogo"
             />
-          </Link>
+          </a>
           <h1 className="brandTagline">The world&apos;s loudest website</h1>
         </div>
 

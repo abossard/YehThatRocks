@@ -249,7 +249,8 @@ button:not(:disabled):active::after {
 .navArtistsGlyph,
 .navFavouritesGlyph,
 .navPlaylistsGlyph,
-.navAccountGlyph {
+.navAccountGlyph,
+.navNewGlyph {
   display: inline-block;
   width: 1.1em;
   margin-right: 8px;
@@ -289,6 +290,12 @@ button:not(:disabled):active::after {
   font-size: 1.24rem;
   font-family: "Segoe UI Emoji", "Segoe UI Symbol", var(--font-body), sans-serif;
   filter: grayscale(1) brightness(2.2) contrast(1.1);
+}
+
+.navNewGlyph {
+  font-size: 1.1rem;
+  font-family: "Segoe UI Emoji", "Segoe UI Symbol", var(--font-body), sans-serif;
+  filter: brightness(0) invert(1);
 }
 
 .whiteHeart {

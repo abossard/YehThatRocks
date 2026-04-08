@@ -4,7 +4,7 @@ import { CloseLink } from "@/components/close-link";
 import { AdminDashboardPanel, type AdminTab } from "@/components/admin-dashboard-panel";
 import { requireAdminUser } from "@/lib/admin-auth";
 
-const ADMIN_TABS: AdminTab[] = ["overview", "categories", "videos", "artists"];
+const ADMIN_TABS: AdminTab[] = ["overview", "categories", "videos", "artists", "ambiguous"];
 
 function resolveAdminTab(tab: string | null | undefined): AdminTab {
   if (tab && ADMIN_TABS.includes(tab as AdminTab)) {
@@ -32,6 +32,7 @@ export default async function AdminPage(props: {
           <Link href="/admin?tab=categories" className={tabClass("categories")}>Categories</Link>
           <Link href="/admin?tab=videos" className={tabClass("videos")}>Videos</Link>
           <Link href="/admin?tab=artists" className={tabClass("artists")}>Artists</Link>
+          <Link href="/admin?tab=ambiguous" className={tabClass("ambiguous")}>Ambiguous</Link>
           <CloseLink />
         </div>
       </div>

@@ -16,6 +16,7 @@ apps/web/.cache
 apps/web/.env.local
 .env.*
 !.env.example
+.env.production.example
 
 # Local database dumps/exports (keep migration/admin SQL tracked)
 *.sql.gz
@@ -24,6 +25,9 @@ apps/web/.env.local
 *dump*.sql
 *backup*.sql
 *export*.sql
+dedupe-map.sql
+yeh_live_*.sql
+yeh_dump_*.sql
 tmp-*.sql
 tmp_*.sql
 !clear-messages.sql
@@ -34,3 +38,11 @@ tmp_*.sql
 pnpm-lock.yaml
 *.tsbuildinfo
 apps/web/.tmp-*.ts
+
+# Local development/debug files
+debug-*.mjs
+
+# Local setup scripts
+audit.ps1
+setup-and-fix.ps1
+fix-mysql-user.ps1

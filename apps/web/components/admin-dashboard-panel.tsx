@@ -46,7 +46,22 @@ type ArtistRow = {
   genre6: string | null;
 };
 
-export type AdminTab = "overview" | "categories" | "videos" | "artists";
+type AmbiguousVideoRow = {
+  id: number;
+  videoId: string;
+  title: string;
+  description: string | null;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  parsedVideoType: string | null;
+  parseConfidence: number | null;
+  parseMethod: string | null;
+  parseReason: string | null;
+  channelTitle: string | null;
+  updatedAt: string | null;
+};
+
+export type AdminTab = "overview" | "categories" | "videos" | "artists" | "ambiguous";
 
 async function readJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
   const response = await fetch(input, init);
@@ -100,11 +115,14 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [videos, setVideos] = useState<VideoRow[]>([]);
   const [artists, setArtists] = useState<ArtistRow[]>([]);
+  const [ambiguousVideos, setAmbiguousVideos] = useState<AmbiguousVideoRow[]>([]);
 
   const [videoQuery, setVideoQuery] = useState("");
   const [videoImportSource, setVideoImportSource] = useState("");
   const [ingestingVideo, setIngestingVideo] = useState(false);
   const [artistQuery, setArtistQuery] = useState("");
+  const [ambiguousQuery, setAmbiguousQuery] = useState("");
+  const [moderatingVideoId, setModeratingVideoId] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
   const selectedLocations = useMemo(() => dashboard?.locations.slice(0, 10) ?? [], [dashboard]);
@@ -140,17 +158,19 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     setError(null);
 
     try {
-      const [dashboardPayload, categoryPayload, videoPayload, artistPayload] = await Promise.all([
+      const [dashboardPayload, categoryPayload, videoPayload, artistPayload, ambiguousPayload] = await Promise.all([
         readJson<DashboardPayload>("/api/admin/dashboard"),
         readJson<{ categories: CategoryRow[] }>("/api/admin/categories"),
         readJson<{ videos: VideoRow[] }>(`/api/admin/videos${videoQuery ? `?q=${encodeURIComponent(videoQuery)}` : ""}`),
         readJson<{ artists: ArtistRow[] }>(`/api/admin/artists${artistQuery ? `?q=${encodeURIComponent(artistQuery)}` : ""}`),
+        readJson<{ ambiguousVideos: AmbiguousVideoRow[] }>(`/api/admin/videos/ambiguous${ambiguousQuery ? `?q=${encodeURIComponent(ambiguousQuery)}` : ""}`),
       ]);
 
       setDashboard(dashboardPayload);
       setCategories(categoryPayload.categories);
       setVideos(videoPayload.videos);
       setArtists(artistPayload.artists);
+      setAmbiguousVideos(ambiguousPayload.ambiguousVideos);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load admin data.");
     } finally {
@@ -237,6 +257,20 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       await loadAll();
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Artist save failed.");
+    }
+  }
+
+  async function moderateAmbiguousVideo(videoId: string, action: "keep" | "delete") {
+    setModeratingVideoId(videoId);
+
+    try {
+      await postJson<{ ok: boolean }>("/api/admin/videos/ambiguous", { videoId, action });
+      setSaveMessage(action === "delete" ? `Deleted ${videoId}.` : `Kept ${videoId}.`);
+      await loadAll();
+    } catch (moderationError) {
+      setSaveMessage(moderationError instanceof Error ? moderationError.message : "Moderation action failed.");
+    } finally {
+      setModeratingVideoId(null);
     }
   }
 
@@ -478,6 +512,58 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   />
                 </label>
                 <button type="button" onClick={() => void saveArtist(row)}>Save Artist</button>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {activeTab === "ambiguous" ? (
+        <section className="panel featurePanel">
+          <div className="panelHeading">
+            <span>Ambiguous Videos</span>
+            <strong>{ambiguousVideos.length} rows</strong>
+          </div>
+          <div className="interactiveStack">
+            <p className="authMessage">
+              Videos shown here are likely non-music or weakly classified. Choose Keep to approve, Delete to remove.
+            </p>
+            <label>
+              <span>Search</span>
+              <input
+                value={ambiguousQuery}
+                onChange={(event) => setAmbiguousQuery(event.target.value)}
+                placeholder="videoId, title, artist, track"
+              />
+            </label>
+            <button type="button" onClick={() => void loadAll()}>Refresh Ambiguous List</button>
+            {ambiguousVideos.map((row) => (
+              <div key={row.id} className="authForm">
+                <p className="authMessage"><strong>{row.videoId}</strong></p>
+                <p className="authMessage">{row.title}</p>
+                {row.channelTitle ? <p className="authMessage">Channel: {row.channelTitle}</p> : null}
+                <p className="authMessage">
+                  Artist: {row.parsedArtist ?? "n/a"} | Track: {row.parsedTrack ?? "n/a"} | Type: {row.parsedVideoType ?? "n/a"} | Confidence: {row.parseConfidence ?? "n/a"}
+                </p>
+                {row.parseMethod || row.parseReason ? (
+                  <p className="authMessage">{row.parseMethod ?? ""} {row.parseReason ? `| ${row.parseReason}` : ""}</p>
+                ) : null}
+                <div className="primaryActions compactActions">
+                  <button
+                    type="button"
+                    onClick={() => void moderateAmbiguousVideo(row.videoId, "keep")}
+                    disabled={moderatingVideoId === row.videoId}
+                  >
+                    {moderatingVideoId === row.videoId ? "Working..." : "Keep"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void moderateAmbiguousVideo(row.videoId, "delete")}
+                    disabled={moderatingVideoId === row.videoId}
+                  >
+                    {moderatingVideoId === row.videoId ? "Working..." : "Delete"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>

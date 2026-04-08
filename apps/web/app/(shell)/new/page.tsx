@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 
 import { ACCESS_TOKEN_COOKIE } from "@/lib/auth-config";
 import { CloseLink } from "@/components/close-link";
+import { NewScrollReset } from "@/components/new-scroll-reset";
 import { Top100VideoLink } from "@/components/top100-video-link";
 import { getNewestVideos } from "@/lib/catalog-data";
 
@@ -12,8 +13,10 @@ export default async function NewPage() {
 
   return (
     <>
+      <NewScrollReset />
+
       <div className="favouritesBlindBar">
-        <strong>New</strong>
+        <strong><span style={{filter: "brightness(0) invert(1)"}}>⭐</span> New</strong>
         <CloseLink />
       </div>
 

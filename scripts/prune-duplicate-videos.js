@@ -5,29 +5,37 @@ const path = require("node:path");
 const { PrismaClient } = require("@prisma/client");
 
 function loadDatabaseEnv() {
-  const envPath = path.resolve(process.cwd(), "apps/web/.env.local");
-  if (!fs.existsSync(envPath)) {
-    return;
-  }
+  const candidateEnvPaths = [
+    path.resolve(process.cwd(), ".env.production"),
+    path.resolve(process.cwd(), "apps/web/.env.production"),
+    path.resolve(process.cwd(), ".env.local"),
+    path.resolve(process.cwd(), "apps/web/.env.local"),
+  ];
 
-  const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
+  for (const envPath of candidateEnvPaths) {
+    if (!fs.existsSync(envPath)) {
       continue;
     }
 
-    const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
-    if (!match) {
-      continue;
-    }
+    const lines = fs.readFileSync(envPath, "utf8").split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith("#")) {
+        continue;
+      }
 
-    const [, key, rawValue] = match;
-    if (process.env[key]) {
-      continue;
-    }
+      const match = trimmed.match(/^([A-Z0-9_]+)=(.*)$/);
+      if (!match) {
+        continue;
+      }
 
-    process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
+      const [, key, rawValue] = match;
+      if (process.env[key]) {
+        continue;
+      }
+
+      process.env[key] = rawValue.replace(/^"/, "").replace(/"$/, "");
+    }
   }
 }
 
@@ -53,7 +61,13 @@ async function main() {
 
   const apply = process.argv.includes("--apply");
   const sampleSize = Math.max(1, Number(parseArg("sample", "10")) || 10);
+  const targetVideoId = (parseArg("video-id", "") || "").trim();
   const prisma = new PrismaClient();
+
+  if (targetVideoId && !/^[A-Za-z0-9_-]{11}$/.test(targetVideoId)) {
+    console.error("--video-id must be a valid 11-character YouTube id.");
+    process.exit(1);
+  }
 
   try {
     await prisma.$executeRawUnsafe("DROP TEMPORARY TABLE IF EXISTS ytr_duplicate_keepers");
@@ -103,6 +117,13 @@ async function main() {
         HAVING COUNT(*) > 1
       ) d
     `);
+
+    if (targetVideoId) {
+      await prisma.$executeRaw`
+        DELETE FROM ytr_duplicate_keepers
+        WHERE videoId <> ${targetVideoId}
+      `;
+    }
 
     await prisma.$executeRawUnsafe(`
       CREATE TEMPORARY TABLE ytr_duplicate_rows (
@@ -158,6 +179,9 @@ async function main() {
 
     console.log("Duplicate groups:", toNumber(duplicateGroups[0], "c"));
     console.log("Rows to delete:", toNumber(duplicateRows[0], "c"));
+    if (targetVideoId) {
+      console.log("Target videoId:", targetVideoId);
+    }
     console.log("Impacted references:");
     for (const row of impactedRefs) {
       console.log(`  ${row.tableName}: ${Number(row.impacted ?? 0)}`);
@@ -168,7 +192,11 @@ async function main() {
     }
 
     if (!apply) {
-      console.log("Dry run complete. Re-run with --apply to execute updates/deletes.");
+      if (targetVideoId) {
+        console.log(`Dry run complete for ${targetVideoId}. Re-run with --apply to execute updates/deletes.`);
+      } else {
+        console.log("Dry run complete. Re-run with --apply to execute updates/deletes.");
+      }
       return;
     }
 

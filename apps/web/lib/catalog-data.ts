@@ -98,6 +98,18 @@ type ParsedVideoMetadata = {
   reason: string | null;
 };
 
+type PlaybackDecisionRow = {
+  id: number;
+  title: string;
+  description: string | null;
+  parsedArtist: string | null;
+  parsedTrack: string | null;
+  parsedVideoType: string | null;
+  parseConfidence: number | null;
+  hasAvailable: number;
+  hasBlocked: number;
+};
+
 export type PlaybackDecision = {
   allowed: boolean;
   reason:
@@ -109,6 +121,11 @@ export type PlaybackDecision = {
     | "unknown-video-type"
     | "unavailable";
   message?: string;
+};
+
+type CachedPlaybackDecision = {
+  expiresAt: number;
+  decision: PlaybackDecision;
 };
 
 const YOUTUBE_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
@@ -126,6 +143,10 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
 const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 const CATALOG_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
+const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
+const playbackDecisionCache = new Map<string, CachedPlaybackDecision>();
+const ALLOWED_VIDEO_TYPES = new Set(["official", "lyric", "live", "cover", "remix", "fan"]);
+const NON_MUSIC_SIGNAL_PATTERN = /\b(instagram|tiktok|facebook|whatsapp|snapchat|podcast|interview|prank|challenge|reaction|vlog|tutorial|gameplay|livestream|stream highlights?|shorts?)\b/i;
 
 let hasCheckedVideoMetadataColumns = false;
 let videoMetadataColumnsAvailable = false;
@@ -141,6 +162,52 @@ function debugCatalog(event: string, detail?: Record<string, unknown>) {
 
 function containsAgeRestrictionMarker(html: string) {
   return AGE_RESTRICTED_PATTERNS.some((pattern) => pattern.test(html));
+}
+
+function isLikelyNonMusicSignal(row: PlaybackDecisionRow) {
+  const haystack = `${row.title}\n${row.description ?? ""}`;
+  return NON_MUSIC_SIGNAL_PATTERN.test(haystack);
+}
+
+function evaluatePlaybackMetadataEligibility(row: PlaybackDecisionRow): PlaybackDecision {
+  const artist = row.parsedArtist?.trim() ?? "";
+  const track = row.parsedTrack?.trim() ?? "";
+  const videoType = (row.parsedVideoType ?? "").trim().toLowerCase();
+  const confidence = Number(row.parseConfidence ?? NaN);
+
+  if (!artist || !track) {
+    return {
+      allowed: false,
+      reason: "missing-metadata",
+      message: "Sorry, that video cannot be played on YehThatRocks.",
+    };
+  }
+
+  if (!ALLOWED_VIDEO_TYPES.has(videoType)) {
+    return {
+      allowed: false,
+      reason: "unknown-video-type",
+      message: "Sorry, that video cannot be played on YehThatRocks.",
+    };
+  }
+
+  if (!Number.isFinite(confidence) || confidence < PLAYBACK_MIN_CONFIDENCE) {
+    return {
+      allowed: false,
+      reason: "low-confidence",
+      message: "Sorry, that video cannot be played on YehThatRocks.",
+    };
+  }
+
+  if (isLikelyNonMusicSignal(row) && confidence < 0.9) {
+    return {
+      allowed: false,
+      reason: "low-confidence",
+      message: "Sorry, that video cannot be played on YehThatRocks.",
+    };
+  }
+
+  return { allowed: true, reason: "ok" };
 }
 
 function truncate(value: string, maxLength: number) {
@@ -573,6 +640,14 @@ let topPoolCache:
       rows: RankedVideoRow[];
     }
   | undefined;
+const NEWEST_CACHE_TTL_MS = 15_000;
+let newestVideosCache:
+  | {
+      expiresAt: number;
+      count: number;
+      rows: RankedVideoRow[];
+    }
+  | undefined;
 
 const GENRE_RESULTS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const GENRE_CARDS_CACHE_TTL_MS = 30 * 1000; // 30 seconds
@@ -699,13 +774,12 @@ async function getRankedTopPool(limit = 129): Promise<RankedVideoRow[]> {
       v.favourited,
       v.description
     FROM videos v
-    WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-      AND EXISTS (
-        SELECT 1
-        FROM site_videos sv
-        WHERE sv.video_id = v.id
-          AND sv.status = 'available'
-      )
+    INNER JOIN site_videos sv
+      ON sv.video_id = v.id
+      AND sv.status = 'available'
+    WHERE v.videoId IS NOT NULL
+      AND CHAR_LENGTH(v.videoId) = 11
+    GROUP BY v.id, v.videoId, v.title, v.favourited, v.description
     ORDER BY v.favourited DESC, v.views DESC, v.videoId ASC
     LIMIT ${limit}
   `;
@@ -2021,20 +2095,14 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     return { allowed: true, reason: "ok" };
   }
 
+  const cachedDecision = playbackDecisionCache.get(normalizedVideoId);
+  const now = Date.now();
+  if (cachedDecision && cachedDecision.expiresAt > now) {
+    return cachedDecision.decision;
+  }
+
   const fetchDecisionRows = async () =>
-    prisma.$queryRaw<
-    Array<{
-      id: number;
-      title: string;
-      description: string | null;
-      parsedArtist: string | null;
-      parsedTrack: string | null;
-      parsedVideoType: string | null;
-      parseConfidence: number | null;
-      hasAvailable: number;
-      hasBlocked: number;
-    }>
-  >`
+    prisma.$queryRaw<Array<PlaybackDecisionRow>>`
     SELECT
       v.id,
       v.title,
@@ -2068,22 +2136,32 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     const hydrated = await hydrateAndPersistVideo(normalizedVideoId);
 
     if (!hydrated) {
-      return {
+      const decision: PlaybackDecision = {
         allowed: false,
         reason: "not-found",
         message: "Sorry, that video cannot be played on YehThatRocks.",
       };
+      playbackDecisionCache.set(normalizedVideoId, {
+        expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS,
+        decision,
+      });
+      return decision;
     }
 
     row = (await fetchDecisionRows())[0];
     hydratedFromDirectRequest = true;
 
     if (!row) {
-      return {
+      const decision: PlaybackDecision = {
         allowed: false,
         reason: "not-found",
         message: "Sorry, that video cannot be played on YehThatRocks.",
       };
+      playbackDecisionCache.set(normalizedVideoId, {
+        expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS,
+        decision,
+      });
+      return decision;
     }
   }
 
@@ -2099,11 +2177,16 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       // Video is available, but allow it through before metadata validation.
       // Metadata will be backfilled asynchronously below.
     } else {
-      return {
+      const decision: PlaybackDecision = {
         allowed: false,
         reason: "unavailable",
         message: "Sorry, that video cannot be played on YehThatRocks.",
       };
+      playbackDecisionCache.set(normalizedVideoId, {
+        expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS,
+        decision,
+      });
+      return decision;
     }
   }
 
@@ -2140,13 +2223,12 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
     }
   }
 
-  // If video is marked available, allow playback even if metadata is incomplete.
-  // This ensures imported videos play immediately regardless of LLM classification state.
-  if (Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
-    return { allowed: true, reason: "ok" };
-  }
-
-  return { allowed: true, reason: "ok" };
+  const decision = evaluatePlaybackMetadataEligibility(row);
+  playbackDecisionCache.set(normalizedVideoId, {
+    expiresAt: now + PLAYBACK_DECISION_CACHE_TTL_MS,
+    decision,
+  });
+  return decision;
 }
 
 export async function getRelatedVideos(videoId: string) {
@@ -2211,6 +2293,15 @@ export async function getNewestVideos(count = 20) {
   }
 
   const safeCount = Math.max(1, Math.min(100, Math.floor(count)));
+  const now = Date.now();
+
+  if (
+    newestVideosCache
+    && newestVideosCache.expiresAt > now
+    && newestVideosCache.count >= safeCount
+  ) {
+    return newestVideosCache.rows.slice(0, safeCount).map(mapVideo);
+  }
 
   try {
     const videos = await prisma.$queryRaw<RankedVideoRow[]>`
@@ -2221,16 +2312,21 @@ export async function getNewestVideos(count = 20) {
         v.favourited,
         v.description
       FROM videos v
-      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
-        AND EXISTS (
-          SELECT 1
-          FROM site_videos sv
-          WHERE sv.video_id = v.id
-            AND sv.status = 'available'
-        )
+      WHERE EXISTS (
+        SELECT 1
+        FROM site_videos sv
+        WHERE sv.video_id = v.id
+          AND sv.status = 'available'
+      )
       ORDER BY v.updatedAt DESC, v.id DESC
       LIMIT ${safeCount}
     `;
+
+    newestVideosCache = {
+      expiresAt: now + NEWEST_CACHE_TTL_MS,
+      count: safeCount,
+      rows: videos,
+    };
 
     return videos.map(mapVideo);
   } catch {
