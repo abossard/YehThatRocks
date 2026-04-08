@@ -102,6 +102,7 @@ export const chatMessages = [
 
 export const navItems = [
   { href: "/", label: "Home" },
+  { href: "/new", label: "New" },
   { href: "/categories", label: "Categories" },
   { href: "/artists", label: "Artists" },
   { href: "/top100", label: "Top 100" },

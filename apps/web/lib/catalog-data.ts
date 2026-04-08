@@ -2205,6 +2205,39 @@ export async function getTopVideos(count = 100) {
   }
 }
 
+export async function getNewestVideos(count = 20) {
+  if (!hasDatabaseUrl()) {
+    return [];
+  }
+
+  const safeCount = Math.max(1, Math.min(100, Math.floor(count)));
+
+  try {
+    const videos = await prisma.$queryRaw<RankedVideoRow[]>`
+      SELECT
+        v.videoId,
+        v.title,
+        NULL AS channelTitle,
+        v.favourited,
+        v.description
+      FROM videos v
+      WHERE v.videoId REGEXP '^[A-Za-z0-9_-]{11}$'
+        AND EXISTS (
+          SELECT 1
+          FROM site_videos sv
+          WHERE sv.video_id = v.id
+            AND sv.status = 'available'
+        )
+      ORDER BY v.updatedAt DESC, v.id DESC
+      LIMIT ${safeCount}
+    `;
+
+    return videos.map(mapVideo);
+  } catch {
+    return [];
+  }
+}
+
 export async function getArtists() {
   if (!hasDatabaseUrl()) {
     return seedArtists;
