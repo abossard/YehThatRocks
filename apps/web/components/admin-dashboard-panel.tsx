@@ -102,6 +102,8 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const [artists, setArtists] = useState<ArtistRow[]>([]);
 
   const [videoQuery, setVideoQuery] = useState("");
+  const [videoImportSource, setVideoImportSource] = useState("");
+  const [ingestingVideo, setIngestingVideo] = useState(false);
   const [artistQuery, setArtistQuery] = useState("");
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
 
@@ -168,6 +170,14 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
     });
   }
 
+  async function postJson<T>(url: string, body: Record<string, unknown>) {
+    return readJson<T>(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
   async function saveCategory(row: CategoryRow) {
     try {
       await patchJson("/api/admin/categories", row);
@@ -185,6 +195,38 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
       await loadAll();
     } catch (saveError) {
       setSaveMessage(saveError instanceof Error ? saveError.message : "Video save failed.");
+    }
+  }
+
+  async function importVideoFromSource() {
+    const source = videoImportSource.trim();
+    if (!source) {
+      setSaveMessage("Paste a YouTube URL or video id first.");
+      return;
+    }
+
+    setIngestingVideo(true);
+
+    try {
+      const response = await postJson<{
+        ok: boolean;
+        videoId: string;
+        decision?: { allowed: boolean; reason: string; message?: string };
+      }>("/api/admin/videos/import", { source });
+
+      if (response.ok) {
+        setSaveMessage(`Imported video ${response.videoId}.`);
+      } else {
+        const detail = response.decision?.message ?? response.decision?.reason ?? "Video cannot be imported.";
+        setSaveMessage(`Import blocked for ${response.videoId}: ${detail}`);
+      }
+
+      setVideoImportSource("");
+      await loadAll();
+    } catch (importError) {
+      setSaveMessage(importError instanceof Error ? importError.message : "Video import failed.");
+    } finally {
+      setIngestingVideo(false);
     }
   }
 
@@ -335,6 +377,17 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
             <strong>{videos.length} rows</strong>
           </div>
           <div className="interactiveStack">
+            <label>
+              <span>Import by YouTube URL or ID</span>
+              <input
+                value={videoImportSource}
+                onChange={(event) => setVideoImportSource(event.target.value)}
+                placeholder="https://youtu.be/... or https://www.youtube.com/watch?v=..."
+              />
+            </label>
+            <button type="button" onClick={() => void importVideoFromSource()} disabled={ingestingVideo}>
+              {ingestingVideo ? "Importing..." : "Import Video"}
+            </button>
             <label>
               <span>Search</span>
               <input value={videoQuery} onChange={(event) => setVideoQuery(event.target.value)} placeholder="videoId, title, artist, track" />

@@ -1141,6 +1141,7 @@ async function fetchRelatedYouTubeVideos(videoId: string): Promise<PersistableVi
 async function hydrateAndPersistVideo(
   videoId: string,
   providedVideo?: PersistableVideoRecord,
+  options?: { forceAvailabilityRefresh?: boolean },
 ): Promise<PersistableVideoRecord | null> {
   if (!hasDatabaseUrl()) {
     return providedVideo ?? (await fetchOEmbedVideo(videoId));
@@ -1155,14 +1156,18 @@ async function hydrateAndPersistVideo(
 
   const existingVideo = await getStoredVideoById(normalizedVideoId);
 
-  if (existingVideo) {
+  if (existingVideo && !options?.forceAvailabilityRefresh) {
     debugCatalog("hydrateAndPersistVideo:local-hit", { videoId: normalizedVideoId });
     return mapStoredVideoToPersistable(existingVideo);
   }
 
-  debugCatalog("hydrateAndPersistVideo:local-miss", { videoId: normalizedVideoId });
+  debugCatalog("hydrateAndPersistVideo:hydrate", {
+    videoId: normalizedVideoId,
+    hasExistingVideo: Boolean(existingVideo),
+    forceAvailabilityRefresh: Boolean(options?.forceAvailabilityRefresh),
+  });
 
-  const video = providedVideo ?? (await fetchOEmbedVideo(normalizedVideoId));
+  const video = providedVideo ?? (existingVideo ? mapStoredVideoToPersistable(existingVideo) : await fetchOEmbedVideo(normalizedVideoId));
 
   if (!video) {
     debugCatalog("hydrateAndPersistVideo:no-external-video", { videoId: normalizedVideoId });
@@ -1199,6 +1204,26 @@ async function hydrateAndPersistVideo(
 async function getExternalVideoById(videoId: string): Promise<VideoRecord | null> {
   const video = await hydrateAndPersistVideo(videoId);
   return video;
+}
+
+export async function importVideoFromDirectSource(source: string) {
+  const normalizedVideoId = normalizeYouTubeVideoId(source);
+
+  if (!normalizedVideoId) {
+    return {
+      videoId: null,
+      decision: {
+        allowed: false,
+        reason: "invalid-video-id",
+        message: "Invalid YouTube URL or video id.",
+      } satisfies PlaybackDecision,
+    };
+  }
+
+  await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
+  const decision = await getVideoPlaybackDecision(normalizedVideoId);
+
+  return { videoId: normalizedVideoId, decision };
 }
 
 function mapArtist(artist: {
@@ -1912,6 +1937,7 @@ export async function getCurrentVideo(videoId?: string, options?: { skipPlayback
               WHERE sv.video_id = videos.id
                 AND (sv.status IS NULL OR sv.status <> 'available')
             )
+          ORDER BY updatedAt DESC, id DESC
           LIMIT 1
         `
       : await getRankedTopPool(1);
@@ -2031,6 +2057,7 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
       ) AS hasBlocked
     FROM videos v
     WHERE v.videoId = ${normalizedVideoId}
+    ORDER BY hasAvailable DESC, hasBlocked ASC, v.updatedAt DESC, v.id DESC
     LIMIT 1
   `;
 
@@ -2131,6 +2158,15 @@ export async function getVideoPlaybackDecision(videoId?: string): Promise<Playba
   }
 
   if (!Boolean(row.hasAvailable) || Boolean(row.hasBlocked)) {
+    if (!hydratedFromDirectRequest) {
+      await hydrateAndPersistVideo(normalizedVideoId, undefined, { forceAvailabilityRefresh: true });
+      row = (await fetchDecisionRows())[0] ?? row;
+    }
+
+    if (Boolean(row.hasAvailable) && !Boolean(row.hasBlocked)) {
+      return { allowed: true, reason: "ok" };
+    }
+
     return {
       allowed: false,
       reason: "unavailable",
