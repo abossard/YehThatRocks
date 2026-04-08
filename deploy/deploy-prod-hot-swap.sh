@@ -15,6 +15,9 @@ TARGET_BRANCH="${TARGET_BRANCH:-main}"
 HEALTH_PATH="${HEALTH_PATH:-/api/status}"
 HEALTH_TIMEOUT_SEC="${HEALTH_TIMEOUT_SEC:-120}"
 LOCK_FILE="${LOCK_FILE:-/tmp/yehthatrocks-deploy.lock}"
+CLEANUP_AFTER_DEPLOY="${CLEANUP_AFTER_DEPLOY:-1}"
+CLEANUP_BUILDER_CACHE="${CLEANUP_BUILDER_CACHE:-1}"
+CLEANUP_UNUSED_IMAGES="${CLEANUP_UNUSED_IMAGES:-1}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[deploy] docker not found" >&2
@@ -62,6 +65,23 @@ APP_PORT="${APP_PORT//\'/}"
 
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
+cleanup_docker_artifacts() {
+  if [ "$CLEANUP_AFTER_DEPLOY" != "1" ]; then
+    echo "[deploy] cleanup disabled"
+    return 0
+  fi
+
+  echo "[deploy] cleaning Docker artifacts"
+
+  if [ "$CLEANUP_BUILDER_CACHE" = "1" ]; then
+    docker builder prune -af >/dev/null 2>&1 || echo "[deploy] builder cache cleanup skipped"
+  fi
+
+  if [ "$CLEANUP_UNUSED_IMAGES" = "1" ]; then
+    docker image prune -af >/dev/null 2>&1 || echo "[deploy] image cleanup skipped"
+  fi
+}
+
 echo "[deploy] fetching latest refs"
 git fetch origin "$TARGET_BRANCH"
 
@@ -93,6 +113,7 @@ START_TS="$(date +%s)"
 while true; do
   if curl -fsS "$STATUS_URL" >/dev/null 2>&1; then
     echo "[deploy] health check passed"
+    cleanup_docker_artifacts
     echo "[deploy] deploy complete: $CURRENT_COMMIT"
     exit 0
   fi

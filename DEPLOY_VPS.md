@@ -204,6 +204,7 @@ This script performs a safer deploy sequence for a live site:
 - Recreate only the `web` container (`db` stays running)
 - Wait for `http://127.0.0.1:${APP_PORT}/api/status`
 - Roll back to previous image automatically if health times out
+- Prune Docker build cache and unused images after a successful deploy by default
 
 Optional environment overrides:
 
@@ -214,6 +215,17 @@ HEALTH_TIMEOUT_SEC=180 \
 HEALTH_PATH=/api/status \
 sudo -E ./deploy/deploy-prod-hot-swap.sh
 ```
+
+Cleanup controls for small VPS disks:
+
+```bash
+CLEANUP_AFTER_DEPLOY=1 \
+CLEANUP_BUILDER_CACHE=1 \
+CLEANUP_UNUSED_IMAGES=1 \
+sudo -E ./deploy/deploy-prod-hot-swap.sh
+```
+
+Default behavior on this repo is to clean builder cache and unused images after a successful deploy. This is intentional for low-disk VPS instances where repeated builds can quickly consume the root volume.
 
 If you still want to use `systemctl`, prefer reload over restart:
 
