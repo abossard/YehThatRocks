@@ -264,3 +264,34 @@ docker compose --env-file .env.production -f docker-compose.prod.yml ps
 ```
 
 If you want a lower-friction first deployment, use the bundled MySQL container exactly as shown above. If you later move MySQL to a managed database, the web service can be pointed at that external `DATABASE_URL` and the `db` service can be removed from the compose file.
+
+## 11. MySQL Shortcut Command
+
+If you want a one-letter command that opens MySQL with no credential prompts, install the bundled shortcut:
+
+```bash
+cd /srv/yehthatrocks
+sudo bash deploy/install-o-shortcut.sh
+```
+
+After install, run:
+
+```bash
+o
+```
+
+What `o` does:
+
+- Opens a MySQL console inside the running `db` container
+- Uses container environment credentials (`MYSQL_ROOT_PASSWORD`, `MYSQL_DATABASE`)
+- Avoids entering username/password manually each time
+
+Optional overrides when installing:
+
+```bash
+REPO_DIR=/srv/yehthatrocks \
+ENV_FILE=/srv/yehthatrocks/.env.production \
+COMPOSE_FILE=/srv/yehthatrocks/docker-compose.prod.yml \
+TARGET_BIN=/usr/local/bin/o \
+sudo -E bash deploy/install-o-shortcut.sh
+```
