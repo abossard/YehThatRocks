@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Near-zero-downtime deploy for single-host Docker Compose setups.
 # - Pulls latest code
-# - Builds web image before swap
+# - Pulls prebuilt web image before swap
 # - Recreates web only (keeps db/network running)
 # - Waits for health endpoint
 # - Rolls back to previous web image if health check fails
@@ -18,6 +18,7 @@ LOCK_FILE="${LOCK_FILE:-/tmp/yehthatrocks-deploy.lock}"
 CLEANUP_AFTER_DEPLOY="${CLEANUP_AFTER_DEPLOY:-1}"
 CLEANUP_BUILDER_CACHE="${CLEANUP_BUILDER_CACHE:-1}"
 CLEANUP_UNUSED_IMAGES="${CLEANUP_UNUSED_IMAGES:-1}"
+WEB_IMAGE_DEFAULT="ghcr.io/simonjamesodell/yehthatrocks-web:latest"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[deploy] docker not found" >&2
@@ -65,6 +66,11 @@ APP_PORT="${APP_PORT//\'/}"
 
 COMPOSE=(docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE")
 
+WEB_IMAGE_FROM_ENV_FILE="$(grep -E '^WEB_IMAGE=' "$ENV_FILE" | tail -n 1 | cut -d'=' -f2- || true)"
+WEB_IMAGE_FROM_ENV_FILE="${WEB_IMAGE_FROM_ENV_FILE//\"/}"
+WEB_IMAGE_FROM_ENV_FILE="${WEB_IMAGE_FROM_ENV_FILE//\'/}"
+WEB_IMAGE="${WEB_IMAGE:-${WEB_IMAGE_FROM_ENV_FILE:-$WEB_IMAGE_DEFAULT}}"
+
 cleanup_docker_artifacts() {
   if [ "$CLEANUP_AFTER_DEPLOY" != "1" ]; then
     echo "[deploy] cleanup disabled"
@@ -94,17 +100,22 @@ git pull --ff-only origin "$TARGET_BRANCH"
 CURRENT_COMMIT="$(git rev-parse --short HEAD)"
 echo "[deploy] target commit: $CURRENT_COMMIT"
 
-PREV_IMAGE_ID="$(docker image inspect yehthatrocks-web:latest --format '{{.Id}}' 2>/dev/null || true)"
-if [ -n "$PREV_IMAGE_ID" ]; then
-  echo "[deploy] snapshotting current image for rollback"
-  docker tag yehthatrocks-web:latest yehthatrocks-web:rollback
+PREV_CONTAINER_ID="$("${COMPOSE[@]}" ps -q web 2>/dev/null || true)"
+PREV_IMAGE_ID=""
+if [ -n "$PREV_CONTAINER_ID" ]; then
+  PREV_IMAGE_ID="$(docker inspect --format '{{.Image}}' "$PREV_CONTAINER_ID" 2>/dev/null || true)"
 fi
 
-echo "[deploy] building web image"
-"${COMPOSE[@]}" build web
+if [ -n "$PREV_IMAGE_ID" ]; then
+  echo "[deploy] snapshotting current web image for rollback"
+  docker tag "$PREV_IMAGE_ID" yehthatrocks-web:rollback
+fi
+
+echo "[deploy] pulling web image: $WEB_IMAGE"
+WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" pull web
 
 echo "[deploy] swapping web container only"
-"${COMPOSE[@]}" up -d --no-deps web
+WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
 
 STATUS_URL="http://127.0.0.1:${APP_PORT}${HEALTH_PATH}"
 echo "[deploy] waiting for health: $STATUS_URL"
@@ -125,8 +136,8 @@ while true; do
 
     if docker image inspect yehthatrocks-web:rollback >/dev/null 2>&1; then
       echo "[deploy] rolling back to previous image"
-      docker tag yehthatrocks-web:rollback yehthatrocks-web:latest
-      "${COMPOSE[@]}" up -d --no-deps web
+      docker tag yehthatrocks-web:rollback "$WEB_IMAGE"
+      WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
 
       if curl -fsS "$STATUS_URL" >/dev/null 2>&1; then
         echo "[deploy] rollback succeeded" >&2

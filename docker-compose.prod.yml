@@ -20,7 +20,7 @@ services:
       retries: 20
 
   web:
-    build: .
+    image: ${WEB_IMAGE:-ghcr.io/simonjamesodell/yehthatrocks-web:latest}
     restart: unless-stopped
     depends_on:
       db:
