@@ -37,6 +37,10 @@ type DashboardPayload = {
       unknownType: number;
     };
     ingestVelocity: Array<{ day: string; count: number }>;
+    groqSpend: {
+      wikiCacheCount: number;
+      daily: Array<{ day: string; classified: number; errors: number }>;
+    };
   };
 };
 
@@ -146,8 +150,10 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
   const selectedLocations = useMemo(() => dashboard?.locations.slice(0, 10) ?? [], [dashboard]);
   const orderedTraffic = useMemo(() => (dashboard?.traffic ?? []).slice().reverse(), [dashboard]);
   const orderedIngestVelocity = useMemo(() => (dashboard?.insights.ingestVelocity ?? []).slice().reverse(), [dashboard]);
+  const orderedGroqSpend = useMemo(() => (dashboard?.insights.groqSpend.daily ?? []).slice().reverse(), [dashboard]);
   const maxTrafficCount = useMemo(() => Math.max(1, ...orderedTraffic.map((item) => item.count)), [orderedTraffic]);
   const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
+  const maxGroqCount = useMemo(() => Math.max(1, ...orderedGroqSpend.map((item) => item.classified + item.errors)), [orderedGroqSpend]);
   const maxLocationCount = useMemo(() => Math.max(1, ...selectedLocations.map((item) => item.count)), [selectedLocations]);
   const authSuccessRate = useMemo(() => {
     const total = dashboard?.insights.auth24h.total ?? 0;
@@ -442,6 +448,52 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                   </div>
                 </div>
               )) : <p className="authMessage">No ingestion data available.</p>}
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Groq API Spend</span>
+              <strong>Metadata calls (14d)</strong>
+            </div>
+            <div className="statusMetrics" style={{ marginBottom: 12 }}>
+              <div>
+                <strong>Wiki Cached</strong>
+                <p>{dashboard?.insights.groqSpend.wikiCacheCount ?? 0}</p>
+              </div>
+              <div>
+                <strong>Est. tokens today</strong>
+                <p>{(() => {
+                  const today = orderedGroqSpend.at(-1);
+                  if (!today) return "—";
+                  const est = (today.classified * 600) + (today.errors * 400);
+                  return est >= 1000 ? `${(est / 1000).toFixed(1)}k` : String(est);
+                })()}</p>
+              </div>
+              <div>
+                <strong>14d classified</strong>
+                <p>{orderedGroqSpend.reduce((s, r) => s + r.classified, 0)}</p>
+              </div>
+              <div>
+                <strong>14d errors</strong>
+                <p>{orderedGroqSpend.reduce((s, r) => s + r.errors, 0)}</p>
+              </div>
+            </div>
+            <div className="interactiveStack">
+              {orderedGroqSpend.length > 0 ? orderedGroqSpend.map((item) => {
+                const total = item.classified + item.errors;
+                const pct = Math.max(3, Math.round((total / maxGroqCount) * 100));
+                const okPct = total > 0 ? Math.round((item.classified / total) * 100) : 0;
+                return (
+                  <div key={item.day}>
+                    <p className="authMessage">{item.day}: {item.classified} ok / {item.errors} err (~{((item.classified * 600 + item.errors * 400) / 1000).toFixed(1)}k tokens)</p>
+                    <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden", display: "flex" }}>
+                      <div style={{ width: `${pct * okPct / 100}%`, height: "100%", background: "linear-gradient(90deg, #5fc16e, #1f6d2d)" }} />
+                      <div style={{ width: `${pct * (100 - okPct) / 100}%`, height: "100%", background: "linear-gradient(90deg, #ff6f43, #6a1a05)" }} />
+                    </div>
+                  </div>
+                );
+              }) : <p className="authMessage">No Groq call data in last 14 days.</p>}
             </div>
           </section>
 

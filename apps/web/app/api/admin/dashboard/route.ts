@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import os from "node:os";
+import path from "node:path";
 
 import { NextRequest, NextResponse } from "next/server";
 
@@ -205,7 +206,7 @@ export async function GET(request: NextRequest) {
     LIMIT 14
   `.catch(() => []);
 
-  const [auth24h, actionBreakdown, metadataQuality, ingestVelocity] = await Promise.all([
+  const [auth24h, actionBreakdown, metadataQuality, ingestVelocity, groqDailySpend] = await Promise.all([
     prisma.$queryRaw<Array<{
       total: bigint | number;
       success: bigint | number;
@@ -257,7 +258,29 @@ export async function GET(request: NextRequest) {
       ORDER BY day DESC
       LIMIT 14
     `.catch(() => []),
+    prisma.$queryRaw<Array<{ day: Date; classified: bigint | number; errors: bigint | number }>>`
+      SELECT
+        DATE(parsedAt) AS day,
+        SUM(CASE WHEN parseMethod LIKE 'groq-llm%' THEN 1 ELSE 0 END) AS classified,
+        SUM(CASE WHEN parseMethod = 'groq-error' THEN 1 ELSE 0 END) AS errors
+      FROM videos
+      WHERE parseMethod LIKE 'groq%'
+        AND parsedAt >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
+      GROUP BY DATE(parsedAt)
+      ORDER BY day DESC
+      LIMIT 14
+    `.catch(() => []),
   ]);
+
+  const wikiCacheCount = await (async () => {
+    try {
+      const cacheDir = path.join(process.cwd(), ".cache", "artist-wiki");
+      const files = await fs.readdir(cacheDir);
+      return files.filter((f) => f.endsWith(".json")).length;
+    } catch {
+      return 0;
+    }
+  })();
 
   const auth24hRow = auth24h[0];
   const metadataRow = metadataQuality[0];
@@ -307,6 +330,14 @@ export async function GET(request: NextRequest) {
         day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
         count: toNumber(row.count),
       })),
+      groqSpend: {
+        wikiCacheCount,
+        daily: groqDailySpend.map((row) => ({
+          day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
+          classified: toNumber(row.classified),
+          errors: toNumber(row.errors),
+        })),
+      },
     },
   });
 }
