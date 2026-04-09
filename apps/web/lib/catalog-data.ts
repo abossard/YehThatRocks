@@ -2433,7 +2433,7 @@ export async function getNewestVideos(count = 20) {
         WHERE sv.video_id = v.id
           AND sv.status = 'available'
       )
-      ORDER BY v.updatedAt DESC, v.id DESC
+      ORDER BY v.createdAt DESC, v.id DESC
       LIMIT ${safeCount}
     `;
 
