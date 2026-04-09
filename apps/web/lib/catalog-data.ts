@@ -141,6 +141,10 @@ const AGE_RESTRICTED_PATTERNS = [
 const YOUTUBE_DATA_API_KEY = process.env.YOUTUBE_DATA_API_KEY?.trim() || undefined;
 const GROQ_API_KEY = process.env.GROQ_API_KEY?.trim() || undefined;
 const GROQ_MODEL = process.env.GROQ_MODEL?.trim() || "openai/gpt-oss-120b";
+const GROQ_RETRY_COOLDOWN_MS = Math.max(
+  300_000,
+  Number(process.env.GROQ_RETRY_COOLDOWN_MS || String(6 * 60 * 60 * 1000)),
+);
 const PLAYBACK_MIN_CONFIDENCE = Math.max(0, Math.min(1, Number(process.env.PLAYBACK_MIN_CONFIDENCE || "0.8")));
 const CATALOG_DEBUG_ENABLED = process.env.NODE_ENV === "development" && process.env.DEBUG_CATALOG === "1";
 const PLAYBACK_DECISION_CACHE_TTL_MS = 15_000;
@@ -492,9 +496,10 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
         parsedVideoType: string | null;
         parseConfidence: number | null;
         parseMethod: string | null;
+        parsedAt: Date | null;
       }>
     >`
-      SELECT parsedArtist, parsedTrack, parsedVideoType, parseConfidence, parseMethod
+      SELECT parsedArtist, parsedTrack, parsedVideoType, parseConfidence, parseMethod, parsedAt
       FROM videos
       WHERE id = ${videoRowId}
       LIMIT 1
@@ -507,15 +512,15 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       existingMeta?.parsedTrack,
     );
     const existingConfidence = Number(existingMeta?.parseConfidence ?? NaN);
-    const hasStrongGroqParse =
+    const existingVideoType = (existingMeta?.parsedVideoType ?? "").trim().toLowerCase();
+    const hasSufficientMetadata =
       Boolean(existingMeta?.parsedArtist?.trim()) &&
       Boolean(existingMeta?.parsedTrack?.trim()) &&
-      existingMeta?.parsedVideoType !== "unknown" &&
+      ALLOWED_VIDEO_TYPES.has(existingVideoType) &&
       Number.isFinite(existingConfidence) &&
-      existingConfidence >= PLAYBACK_MIN_CONFIDENCE &&
-      existingMeta?.parseMethod === "groq-llm";
+      existingConfidence >= PLAYBACK_MIN_CONFIDENCE;
 
-    if (hasStrongGroqParse) {
+    if (hasSufficientMetadata) {
       if (existingLikelySwapped && existingMeta?.parsedArtist && existingMeta?.parsedTrack) {
         await prisma.$executeRaw`
           UPDATE videos
@@ -535,8 +540,29 @@ async function maybePersistRuntimeMetadata(videoRowId: number, video: Persistabl
       return;
     }
 
+    const parsedAtRaw = existingMeta?.parsedAt;
+    const parsedAtMs = parsedAtRaw
+      ? (parsedAtRaw instanceof Date ? parsedAtRaw.getTime() : new Date(parsedAtRaw).getTime())
+      : NaN;
+    const hasRecentGroqAttempt =
+      Number.isFinite(parsedAtMs) &&
+      Date.now() - parsedAtMs < GROQ_RETRY_COOLDOWN_MS &&
+      (existingMeta?.parseMethod === "groq-error" || (existingMeta?.parseMethod ?? "").startsWith("groq-llm"));
+
+    if (hasRecentGroqAttempt) {
+      return;
+    }
+
     const parsed = await classifyVideoMetadataWithGroq(video);
     if (!parsed) {
+      await prisma.$executeRaw`
+        UPDATE videos
+        SET
+          parseMethod = ${"groq-error"},
+          parseReason = ${"Groq metadata classification failed. Retry deferred by cooldown."},
+          parsedAt = ${new Date()}
+        WHERE id = ${videoRowId}
+      `;
       return;
     }
 
