@@ -1,18 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+
+import type { VideoRecord } from "@/lib/catalog";
 import { Top100VideoLink } from "@/components/top100-video-link";
 
-type Video = {
-  id: number;
-  videoId: string;
-  title: string;
-  channelTitle: string | null;
-  favourited: number;
-  description: string | null;
-};
-
-export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVideos: Video[]; isAuthenticated: boolean }) {
+export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVideos: VideoRecord[]; isAuthenticated: boolean }) {
   const [allVideos, setAllVideos] = useState(initialVideos);
   const [loading, setLoading] = useState(true);
 
@@ -25,7 +18,7 @@ export function NewVideosLoader({ initialVideos, isAuthenticated }: { initialVid
         });
 
         if (response.ok) {
-          const { videos } = (await response.json()) as { videos: Video[] };
+          const { videos } = (await response.json()) as { videos: VideoRecord[] };
           setAllVideos((prev) => [...prev, ...videos]);
         }
       } catch (error) {
