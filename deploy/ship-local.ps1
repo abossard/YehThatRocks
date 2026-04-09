@@ -24,10 +24,18 @@ if ([string]::IsNullOrWhiteSpace($VpsHost)) {
     throw "VpsHost is required. Set YTR_VPS_HOST or pass -VpsHost."
   }
 
+  if ($VpsHost -notmatch "@") {
+    $VpsHost = "root@$VpsHost"
+  }
+
   # Persist for future no-flag runs.
   & setx YTR_VPS_HOST $VpsHost | Out-Null
   $env:YTR_VPS_HOST = $VpsHost
   Write-Host "Saved YTR_VPS_HOST for future runs: $VpsHost" -ForegroundColor Green
+}
+
+if ($VpsHost -notmatch "@") {
+  $VpsHost = "root@$VpsHost"
 }
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {

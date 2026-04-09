@@ -2,6 +2,7 @@ node_modules
 .next
 .turbo
 .git
+.github
 *.tsbuildinfo
 dist
 coverage
@@ -9,7 +10,14 @@ playwright-report
 test-results
 screenshot-*.png
 logs
+images
+favicons
+reference
+deploy
+*.md
 rocks.sql
+*.sql
+*.sql.gz
 .env
 .env.local
 .env.*.local
