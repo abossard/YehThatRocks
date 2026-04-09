@@ -21,6 +21,15 @@ type CpuSample = {
 let previousCpuSample: CpuSample | null = null;
 const METRIC_SAMPLE_MS = Math.max(50, Number(process.env.ADMIN_METRIC_SAMPLE_MS || "200"));
 
+function toNumber(value: bigint | number | null | undefined) {
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+
+  const numeric = Number(value ?? 0);
+  return Number.isFinite(numeric) ? numeric : 0;
+}
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -196,6 +205,63 @@ export async function GET(request: NextRequest) {
     LIMIT 14
   `.catch(() => []);
 
+  const [auth24h, actionBreakdown, metadataQuality, ingestVelocity] = await Promise.all([
+    prisma.$queryRaw<Array<{
+      total: bigint | number;
+      success: bigint | number;
+      failed: bigint | number;
+      uniqueIps: bigint | number;
+      uniqueUsers: bigint | number;
+    }>>`
+      SELECT
+        COUNT(*) AS total,
+        SUM(CASE WHEN success = 1 THEN 1 ELSE 0 END) AS success,
+        SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed,
+        COUNT(DISTINCT NULLIF(TRIM(ip_address), '')) AS uniqueIps,
+        COUNT(DISTINCT user_id) AS uniqueUsers
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 24 HOUR)
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ action: string; total: bigint | number; failed: bigint | number }>>`
+      SELECT
+        action,
+        COUNT(*) AS total,
+        SUM(CASE WHEN success = 0 THEN 1 ELSE 0 END) AS failed
+      FROM auth_audit_logs
+      WHERE created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 7 DAY)
+      GROUP BY action
+      ORDER BY total DESC
+      LIMIT 8
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{
+      availableVideos: bigint | number;
+      checkFailedEntries: bigint | number;
+      missingMetadata: bigint | number;
+      lowConfidence: bigint | number;
+      unknownType: bigint | number;
+    }>>`
+      SELECT
+        COUNT(DISTINCT CASE WHEN sv.status = 'available' THEN v.id END) AS availableVideos,
+        COUNT(DISTINCT CASE WHEN sv.status = 'check-failed' THEN v.id END) AS checkFailedEntries,
+        SUM(CASE WHEN v.parsedArtist IS NULL OR TRIM(v.parsedArtist) = '' OR v.parsedTrack IS NULL OR TRIM(v.parsedTrack) = '' THEN 1 ELSE 0 END) AS missingMetadata,
+        SUM(CASE WHEN v.parseConfidence IS NULL OR v.parseConfidence < 0.80 THEN 1 ELSE 0 END) AS lowConfidence,
+        SUM(CASE WHEN v.parsedVideoType IS NULL OR v.parsedVideoType = '' OR v.parsedVideoType = 'unknown' THEN 1 ELSE 0 END) AS unknownType
+      FROM videos v
+      LEFT JOIN site_videos sv ON sv.video_id = v.id
+    `.catch(() => []),
+    prisma.$queryRaw<Array<{ day: Date; count: bigint | number }>>`
+      SELECT DATE(createdAt) AS day, COUNT(*) AS count
+      FROM videos
+      WHERE createdAt >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 14 DAY)
+      GROUP BY DATE(createdAt)
+      ORDER BY day DESC
+      LIMIT 14
+    `.catch(() => []),
+  ]);
+
+  const auth24hRow = auth24h[0];
+  const metadataRow = metadataQuality[0];
+
   return NextResponse.json({
     ok: true,
     meta: {
@@ -211,11 +277,36 @@ export async function GET(request: NextRequest) {
     },
     locations: locations.map((row) => ({
       location: row.location,
-      count: typeof row.count === "bigint" ? Number(row.count) : Number(row.count ?? 0),
+      count: toNumber(row.count),
     })),
     traffic: traffic.map((row) => ({
       day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
-      count: typeof row.count === "bigint" ? Number(row.count) : Number(row.count ?? 0),
+      count: toNumber(row.count),
     })),
+    insights: {
+      auth24h: {
+        total: toNumber(auth24hRow?.total),
+        success: toNumber(auth24hRow?.success),
+        failed: toNumber(auth24hRow?.failed),
+        uniqueIps: toNumber(auth24hRow?.uniqueIps),
+        uniqueUsers: toNumber(auth24hRow?.uniqueUsers),
+      },
+      authActionBreakdown: actionBreakdown.map((row) => ({
+        action: row.action,
+        total: toNumber(row.total),
+        failed: toNumber(row.failed),
+      })),
+      metadataQuality: {
+        availableVideos: toNumber(metadataRow?.availableVideos),
+        checkFailedEntries: toNumber(metadataRow?.checkFailedEntries),
+        missingMetadata: toNumber(metadataRow?.missingMetadata),
+        lowConfidence: toNumber(metadataRow?.lowConfidence),
+        unknownType: toNumber(metadataRow?.unknownType),
+      },
+      ingestVelocity: ingestVelocity.map((row) => ({
+        day: row.day instanceof Date ? row.day.toISOString().slice(0, 10) : String(row.day),
+        count: toNumber(row.count),
+      })),
+    },
   });
 }

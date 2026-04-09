@@ -20,6 +20,24 @@ type DashboardPayload = {
   counts: { users: number; videos: number; artists: number; categories: number };
   locations: Array<{ location: string; count: number }>;
   traffic: Array<{ day: string; count: number }>;
+  insights: {
+    auth24h: {
+      total: number;
+      success: number;
+      failed: number;
+      uniqueIps: number;
+      uniqueUsers: number;
+    };
+    authActionBreakdown: Array<{ action: string; total: number; failed: number }>;
+    metadataQuality: {
+      availableVideos: number;
+      checkFailedEntries: number;
+      missingMetadata: number;
+      lowConfidence: number;
+      unknownType: number;
+    };
+    ingestVelocity: Array<{ day: string; count: number }>;
+  };
 };
 
 type CategoryRow = { id: number; genre: string; thumbnailVideoId: string | null; updatedAt: string };
@@ -127,8 +145,20 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
 
   const selectedLocations = useMemo(() => dashboard?.locations.slice(0, 10) ?? [], [dashboard]);
   const orderedTraffic = useMemo(() => (dashboard?.traffic ?? []).slice().reverse(), [dashboard]);
+  const orderedIngestVelocity = useMemo(() => (dashboard?.insights.ingestVelocity ?? []).slice().reverse(), [dashboard]);
   const maxTrafficCount = useMemo(() => Math.max(1, ...orderedTraffic.map((item) => item.count)), [orderedTraffic]);
+  const maxIngestCount = useMemo(() => Math.max(1, ...orderedIngestVelocity.map((item) => item.count)), [orderedIngestVelocity]);
   const maxLocationCount = useMemo(() => Math.max(1, ...selectedLocations.map((item) => item.count)), [selectedLocations]);
+  const authSuccessRate = useMemo(() => {
+    const total = dashboard?.insights.auth24h.total ?? 0;
+    const success = dashboard?.insights.auth24h.success ?? 0;
+
+    if (!total) {
+      return 0;
+    }
+
+    return Math.round((success / total) * 100);
+  }, [dashboard]);
   const trafficGraph = useMemo(() => {
     const width = 680;
     const height = 220;
@@ -338,6 +368,80 @@ export function AdminDashboardPanel({ activeTab }: { activeTab: AdminTab }) {
                 <p className="authMessage">No traffic data available.</p>
               )}
               <div className="authMessage">Peak daily events: {maxTrafficCount}</div>
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Activity Quality (Last 24h)</span>
+              <strong>Auth signal</strong>
+            </div>
+            <div className="statusMetrics">
+              <div><strong>Events</strong><p>{dashboard?.insights.auth24h.total ?? 0}</p></div>
+              <div><strong>Success Rate</strong><p>{authSuccessRate}%</p></div>
+              <div><strong>Failed</strong><p>{dashboard?.insights.auth24h.failed ?? 0}</p></div>
+              <div><strong>Unique IPs</strong><p>{dashboard?.insights.auth24h.uniqueIps ?? 0}</p></div>
+              <div><strong>Active Users</strong><p>{dashboard?.insights.auth24h.uniqueUsers ?? 0}</p></div>
+            </div>
+            <div className="interactiveStack">
+              <div className="panelHeading">
+                <span>Top Auth Actions (7d)</span>
+                <strong>{dashboard?.insights.authActionBreakdown.length ?? 0} actions</strong>
+              </div>
+              {(dashboard?.insights.authActionBreakdown ?? []).map((row) => {
+                const failRate = row.total > 0 ? Math.round((row.failed / row.total) * 100) : 0;
+                return (
+                  <div key={row.action}>
+                    <p className="authMessage">{row.action}: {row.total} events - {row.failed} failed ({failRate}%)</p>
+                    <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
+                      <div
+                        style={{
+                          width: `${Math.max(3, failRate)}%`,
+                          height: "100%",
+                          background: "linear-gradient(90deg, #ff6f43, #6a1a05)",
+                        }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Catalog Quality</span>
+              <strong>Metadata health</strong>
+            </div>
+            <div className="statusMetrics">
+              <div><strong>Playable</strong><p>{dashboard?.insights.metadataQuality.availableVideos ?? 0}</p></div>
+              <div><strong>Check Failed</strong><p>{dashboard?.insights.metadataQuality.checkFailedEntries ?? 0}</p></div>
+              <div><strong>Missing Meta</strong><p>{dashboard?.insights.metadataQuality.missingMetadata ?? 0}</p></div>
+              <div><strong>Low Confidence</strong><p>{dashboard?.insights.metadataQuality.lowConfidence ?? 0}</p></div>
+              <div><strong>Unknown Type</strong><p>{dashboard?.insights.metadataQuality.unknownType ?? 0}</p></div>
+            </div>
+          </section>
+
+          <section className="panel featurePanel">
+            <div className="panelHeading">
+              <span>Ingestion Velocity</span>
+              <strong>Videos added (14d)</strong>
+            </div>
+            <div className="interactiveStack">
+              {orderedIngestVelocity.length > 0 ? orderedIngestVelocity.map((item) => (
+                <div key={item.day}>
+                  <p className="authMessage">{item.day}: {item.count}</p>
+                  <div style={{ background: "rgba(255,255,255,0.08)", borderRadius: 8, height: 10, overflow: "hidden" }}>
+                    <div
+                      style={{
+                        width: `${Math.max(3, Math.round((item.count / maxIngestCount) * 100))}%`,
+                        height: "100%",
+                        background: "linear-gradient(90deg, #5fc1ff, #1f4f6d)",
+                      }}
+                    />
+                  </div>
+                </div>
+              )) : <p className="authMessage">No ingestion data available.</p>}
             </div>
           </section>
 
