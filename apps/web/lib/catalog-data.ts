@@ -1067,17 +1067,30 @@ async function persistVideoAvailability(video: PersistableVideoRecord, availabil
       WHERE id = ${existingVideo.id}
     `;
   } else {
-    await prisma.$executeRaw`
-      INSERT INTO videos (videoId, title, favourited, description, createdAt, updatedAt)
-      VALUES (
-        ${video.id},
-        ${persistedTitle},
-        0,
-        ${persistedDescription},
-        ${persistedTimestamp},
-        ${persistedTimestamp}
-      )
-    `;
+    try {
+      await prisma.$executeRaw`
+        INSERT INTO videos (videoId, title, favourited, description, createdAt, updatedAt)
+        VALUES (
+          ${video.id},
+          ${persistedTitle},
+          0,
+          ${persistedDescription},
+          ${persistedTimestamp},
+          ${persistedTimestamp}
+        )
+      `;
+    } catch (error) {
+      // Race condition: another request inserted the same videoId between our check and insert.
+      // Treat this as a successful upsert and proceed.
+      if (error instanceof Error && (error.message.includes("UNIQUE") || error.message.includes("Duplicate"))) {
+        debugCatalog("persistVideoAvailability:race-condition-insert", {
+          videoId: video.id,
+          message: error.message,
+        });
+      } else {
+        throw error;
+      }
+    }
   }
 
   debugCatalog("persistVideoAvailability:video-upserted", {
