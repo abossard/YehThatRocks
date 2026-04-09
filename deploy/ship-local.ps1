@@ -64,7 +64,7 @@ try {
   $latestTag = "$ImageBase`:latest"
 
   Write-Host "Building image locally with full progress output..." -ForegroundColor Yellow
-  Exec "docker buildx build --platform linux/amd64 --progress=plain --load -t $imageTag -t $latestTag ."
+  Exec "docker build --progress=plain -t $imageTag -t $latestTag ."
 
   Write-Host "Streaming image directly to VPS (no registry)..." -ForegroundColor Yellow
   Exec "docker save $imageTag | ssh $VpsHost 'docker load'"
