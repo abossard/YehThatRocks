@@ -14,6 +14,7 @@ COMPOSE_FILE="${COMPOSE_FILE:-$REPO_DIR/docker-compose.prod.yml}"
 TARGET_BRANCH="${TARGET_BRANCH:-main}"
 HEALTH_PATH="${HEALTH_PATH:-/api/status}"
 HEALTH_TIMEOUT_SEC="${HEALTH_TIMEOUT_SEC:-120}"
+HEALTH_REQUEST_TIMEOUT_SEC="${HEALTH_REQUEST_TIMEOUT_SEC:-5}"
 LOCK_FILE="${LOCK_FILE:-/tmp/yehthatrocks-deploy.lock}"
 CLEANUP_AFTER_DEPLOY="${CLEANUP_AFTER_DEPLOY:-1}"
 CLEANUP_BUILDER_CACHE="${CLEANUP_BUILDER_CACHE:-1}"
@@ -89,6 +90,56 @@ cleanup_docker_artifacts() {
   fi
 }
 
+wait_for_public_health() {
+  local status_url="$1"
+  local timeout_sec="$2"
+  local start_ts now_ts elapsed
+
+  start_ts="$(date +%s)"
+  while true; do
+    if curl -fsS --max-time "$HEALTH_REQUEST_TIMEOUT_SEC" "$status_url" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now_ts="$(date +%s)"
+    elapsed="$((now_ts - start_ts))"
+    if [ "$elapsed" -ge "$timeout_sec" ]; then
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
+wait_for_canary_health() {
+  local container_name="$1"
+  local timeout_sec="$2"
+  local start_ts now_ts elapsed
+
+  start_ts="$(date +%s)"
+  while true; do
+    if ! docker ps --format '{{.Names}}' | grep -Fxq "$container_name"; then
+      echo "[deploy] canary container is not running: $container_name" >&2
+      docker logs --tail=120 "$container_name" >&2 || true
+      return 1
+    fi
+
+    if docker exec "$container_name" node -e "const timeout = AbortSignal.timeout(${HEALTH_REQUEST_TIMEOUT_SEC}000); fetch('http://127.0.0.1:3000${HEALTH_PATH}', { signal: timeout }).then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1));" >/dev/null 2>&1; then
+      return 0
+    fi
+
+    now_ts="$(date +%s)"
+    elapsed="$((now_ts - start_ts))"
+    if [ "$elapsed" -ge "$timeout_sec" ]; then
+      echo "[deploy] canary health check timed out after ${timeout_sec}s" >&2
+      docker logs --tail=120 "$container_name" >&2 || true
+      return 1
+    fi
+
+    sleep 2
+  done
+}
+
 echo "[deploy] fetching latest refs"
 git fetch origin "$TARGET_BRANCH"
 
@@ -123,38 +174,46 @@ echo "[deploy] swapping web container only"
 WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
 
 STATUS_URL="http://127.0.0.1:${APP_PORT}${HEALTH_PATH}"
-echo "[deploy] waiting for health: $STATUS_URL"
+echo "[deploy] preflighting candidate image before swap"
+CANARY_NAME="yehthatrocks-web-canary-${CURRENT_COMMIT}-$$"
+cleanup_canary() {
+  docker rm -f "$CANARY_NAME" >/dev/null 2>&1 || true
+}
+trap cleanup_canary EXIT
 
-START_TS="$(date +%s)"
-while true; do
-  if curl -fsS "$STATUS_URL" >/dev/null 2>&1; then
-    echo "[deploy] health check passed"
-    cleanup_docker_artifacts
-    echo "[deploy] deploy complete: $CURRENT_COMMIT"
-    exit 0
+WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" run -d --no-deps --name "$CANARY_NAME" web >/dev/null
+
+if ! wait_for_canary_health "$CANARY_NAME" "$HEALTH_TIMEOUT_SEC"; then
+  echo "[deploy] candidate image failed canary preflight; keeping current web container live" >&2
+  cleanup_docker_artifacts
+  exit 1
+fi
+
+echo "[deploy] canary passed; swapping web container"
+WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
+
+echo "[deploy] verifying live health after swap: $STATUS_URL"
+if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
+  echo "[deploy] health check passed"
+  cleanup_docker_artifacts
+  echo "[deploy] deploy complete: $CURRENT_COMMIT"
+  exit 0
+fi
+
+echo "[deploy] post-swap health check timed out after ${HEALTH_TIMEOUT_SEC}s" >&2
+if docker image inspect yehthatrocks-web:rollback >/dev/null 2>&1; then
+  echo "[deploy] rolling back to previous image"
+  WEB_IMAGE="yehthatrocks-web:rollback" "${COMPOSE[@]}" up -d --no-deps web
+
+  if wait_for_public_health "$STATUS_URL" "$HEALTH_TIMEOUT_SEC"; then
+    echo "[deploy] rollback succeeded" >&2
+  else
+    echo "[deploy] rollback attempted, but health endpoint is still failing" >&2
   fi
+else
+  echo "[deploy] rollback image not available" >&2
+fi
 
-  NOW_TS="$(date +%s)"
-  ELAPSED="$((NOW_TS - START_TS))"
-  if [ "$ELAPSED" -ge "$HEALTH_TIMEOUT_SEC" ]; then
-    echo "[deploy] health check timed out after ${HEALTH_TIMEOUT_SEC}s" >&2
-
-    if docker image inspect yehthatrocks-web:rollback >/dev/null 2>&1; then
-      echo "[deploy] rolling back to previous image"
-      docker tag yehthatrocks-web:rollback "$WEB_IMAGE"
-      WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
-
-      if curl -fsS "$STATUS_URL" >/dev/null 2>&1; then
-        echo "[deploy] rollback succeeded" >&2
-      else
-        echo "[deploy] rollback attempted, but health endpoint is still failing" >&2
-      fi
-    else
-      echo "[deploy] rollback image not available" >&2
-    fi
-
-    exit 1
-  fi
-
-  sleep 2
-done
+# Cleanup should also run on failure to avoid accumulating unused images.
+cleanup_docker_artifacts
+exit 1
