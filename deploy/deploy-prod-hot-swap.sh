@@ -170,9 +170,6 @@ else
   WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" pull web
 fi
 
-echo "[deploy] swapping web container only"
-WEB_IMAGE="$WEB_IMAGE" "${COMPOSE[@]}" up -d --no-deps web
-
 STATUS_URL="http://127.0.0.1:${APP_PORT}${HEALTH_PATH}"
 echo "[deploy] preflighting candidate image before swap"
 CANARY_NAME="yehthatrocks-web-canary-${CURRENT_COMMIT}-$$"
