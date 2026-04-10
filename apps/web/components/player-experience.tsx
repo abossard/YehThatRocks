@@ -909,6 +909,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
             if (playerRef.current) {
               const latestTime = toSafeNumber(playerRef.current.getCurrentTime(), 0);
               setCurrentTime(latestTime);
+              if (typeof playerRef.current.getVolume === "function") {
+                setVolume(toSafeNumber(playerRef.current.getVolume(), 100));
+              }
+              if (typeof playerRef.current.isMuted === "function") {
+                setIsMuted(Boolean(playerRef.current.isMuted()));
+              }
               persistResumeSnapshot(playing, latestTime);
             }
 
@@ -1257,6 +1263,12 @@ export function PlayerExperience({ currentVideo, queue, isLoggedIn }: PlayerExpe
         if (isPlaying) {
           playerRef.current.pauseVideo();
         } else {
+          // Some browsers/embeds can remain muted after reload until we explicitly unmute
+          // during a user-initiated play gesture.
+          if (!hasPlaybackStarted && isMuted && volume > 0) {
+            playerRef.current.unMute();
+            setIsMuted(false);
+          }
           playAttemptedAtRef.current = Date.now();
           playerRef.current.playVideo();
         }
